@@ -99,51 +99,51 @@ except NameError:
 # Pickle opcodes.  See pickletools.py for extensive docs.  The listing
 # here is in kind-of alphabetical order of 1-character pickle code.
 # pickletools groups them by purpose.
+#__ILEC400__
+MARK       = '\x28'
+STOP       = '\x2e'
+POP        = '\x30'
+POP_MARK   = '\x31'
+DUP        = '\x32'
+FLOAT      = '\x46'
+BINFLOAT   = '\x47'
+INT        = '\x49'
+BININT     = '\x4a'
+BININT1    = '\x4b'
+LONG       = '\x4c'
+BININT2    = '\x4d'
+NONE       = '\x4e'
+PERSID     = '\x50'
+BINPERSID  = '\x51'
+REDUCE     = '\x52'
+STRING     = '\x53'
+BINSTRING  = '\x54'
+SHORT_BINSTRING ='\x55'
+UNICODE    = '\x56'
+BINUNICODE = '\x58'
+APPEND     = '\x61'
+BUILD      = '\x62'
+GLOBAL     = '\x63'
+DICT       = '\x64'
+EMPTY_DICT = '\x7d'
+APPENDS    = '\x65'
+GET        = '\x67'
+BINGET     = '\x68'
+INST       = '\x69'
+LONG_BINGET= '\x6a'
+LIST       = '\x6c'
+EMPTY_LIST = '\x5d'
+OBJ        = '\x6f'
+PUT        = '\x70'
+BINPUT     = '\x71'
+LONG_BINPUT= '\x72'
+SETITEM    = '\x73'
+TUPLE      = '\x74'
+EMPTY_TUPLE= '\x29'
+SETITEMS   = '\x75'
 
-MARK            = '('   # push special markobject on stack
-STOP            = '.'   # every pickle ends with STOP
-POP             = '0'   # discard topmost stack item
-POP_MARK        = '1'   # discard stack top through topmost markobject
-DUP             = '2'   # duplicate top stack item
-FLOAT           = 'F'   # push float object; decimal string argument
-INT             = 'I'   # push integer or bool; decimal string argument
-BININT          = 'J'   # push four-byte signed int
-BININT1         = 'K'   # push 1-byte unsigned int
-LONG            = 'L'   # push long; decimal string argument
-BININT2         = 'M'   # push 2-byte unsigned int
-NONE            = 'N'   # push None
-PERSID          = 'P'   # push persistent object; id is taken from string arg
-BINPERSID       = 'Q'   #  "       "         "  ;  "  "   "     "  stack
-REDUCE          = 'R'   # apply callable to argtuple, both on stack
-STRING          = 'S'   # push string; NL-terminated string argument
-BINSTRING       = 'T'   # push string; counted binary string argument
-SHORT_BINSTRING = 'U'   #  "     "   ;    "      "       "      " < 256 bytes
-UNICODE         = 'V'   # push Unicode string; raw-unicode-escaped'd argument
-BINUNICODE      = 'X'   #   "     "       "  ; counted UTF-8 string argument
-APPEND          = 'a'   # append stack top to list below it
-BUILD           = 'b'   # call __setstate__ or __dict__.update()
-GLOBAL          = 'c'   # push self.find_class(modname, name); 2 string args
-DICT            = 'd'   # build a dict from stack items
-EMPTY_DICT      = '}'   # push empty dict
-APPENDS         = 'e'   # extend list on stack by topmost stack slice
-GET             = 'g'   # push item from memo on stack; index is string arg
-BINGET          = 'h'   #   "    "    "    "   "   "  ;   "    " 1-byte arg
-INST            = 'i'   # build & push class instance
-LONG_BINGET     = 'j'   # push item from memo on stack; index is 4-byte arg
-LIST            = 'l'   # build list from topmost stack items
-EMPTY_LIST      = ']'   # push empty list
-OBJ             = 'o'   # build & push class instance
-PUT             = 'p'   # store stack top in memo; index is string arg
-BINPUT          = 'q'   #   "     "    "   "   " ;   "    " 1-byte arg
-LONG_BINPUT     = 'r'   #   "     "    "   "   " ;   "    " 4-byte arg
-SETITEM         = 's'   # add key+value pair to dict
-TUPLE           = 't'   # build tuple from topmost stack items
-EMPTY_TUPLE     = ')'   # push empty tuple
-SETITEMS        = 'u'   # modify dict by adding topmost key+value pairs
-BINFLOAT        = 'G'   # push float; arg is 8-byte float encoding
-
-TRUE            = 'I01\n'  # not an opcode; see INT docs in pickletools.py
-FALSE           = 'I00\n'  # not an opcode; see INT docs in pickletools.py
+TRUE      = '\x4901\n'  # not an opcode; see INT docs in pickletools.py
+FALSE     = '\x4900\n'  # not an opcode; see INT docs in pickletools.py
 
 # Protocol 2
 

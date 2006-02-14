@@ -199,9 +199,13 @@ class _fileobject(object):
 
     __slots__ = ["mode", "bufsize", "softspace",
                  # "closed" is a property, see below
-                 "_sock", "_rbufsize", "_wbufsize", "_rbuf", "_wbuf"]
+                 "_sock", "_rbufsize", "_wbufsize", "_rbuf", "_wbuf", "nlc"]
 
-    def __init__(self, sock, mode='rb', bufsize=-1):
+    def __init__(self, sock, mode='rb', bufsize=-1, newline = '\x0a'):
+        # __ILEC400__  New parameter newline and new slot nlc
+        # Default use '\x0a' instead of '\n' as newline
+        # but if read from AS/400 '\n' should be used
+        self.nlc = newline
         self._sock = sock
         self.mode = mode # Not actually used in this version
         if bufsize < 0:
@@ -251,7 +255,7 @@ class _fileobject(object):
             return
         self._wbuf.append(data)
         if (self._wbufsize == 0 or
-            self._wbufsize == 1 and '\n' in data or
+            self._wbufsize == 1 and self.nlc in data or
             self._get_wbuf_len() >= self._wbufsize):
             self.flush()
 
@@ -321,13 +325,13 @@ class _fileobject(object):
                 assert data == ""
                 buffers = []
                 recv = self._sock.recv
-                while data != "\n":
+                while data != self.nlc:
                     data = recv(1)
                     if not data:
                         break
                     buffers.append(data)
                 return "".join(buffers)
-            nl = data.find('\n')
+            nl = data.find(self.nlc)
             if nl >= 0:
                 nl += 1
                 self._rbuf = data[nl:]
@@ -341,7 +345,7 @@ class _fileobject(object):
                 if not data:
                     break
                 buffers.append(data)
-                nl = data.find('\n')
+                nl = data.find(self.nlc)
                 if nl >= 0:
                     nl += 1
                     self._rbuf = data[nl:]
@@ -350,7 +354,7 @@ class _fileobject(object):
             return "".join(buffers)
         else:
             # Read until size bytes or \n or EOF seen, whichever comes first
-            nl = data.find('\n', 0, size)
+            nl = data.find(self.nlc, 0, size)
             if nl >= 0:
                 nl += 1
                 self._rbuf = data[nl:]
@@ -369,7 +373,7 @@ class _fileobject(object):
                     break
                 buffers.append(data)
                 left = size - buf_len
-                nl = data.find('\n', 0, left)
+                nl = data.find(self.nlc, 0, left)
                 if nl >= 0:
                     nl += 1
                     self._rbuf = data[nl:]

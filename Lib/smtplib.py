@@ -41,6 +41,8 @@ Example:
 #
 # This was modified from the Python 1.5 library HTTP lib.
 
+#__ILEC400__
+import os400
 import socket
 import re
 import rfc822
@@ -236,6 +238,8 @@ class SMTP:
         the local hostname is found using socket.getfqdn().
 
         """
+        #__ILEC400__
+        self.codec = os400.Codec('latin1')
         self.esmtp_features = {}
         if host:
             (code, msg) = self.connect(host, port)
@@ -323,7 +327,8 @@ class SMTP:
             str = '%s%s' % (cmd, CRLF)
         else:
             str = '%s %s%s' % (cmd, args, CRLF)
-        self.send(str)
+        # __ILEC400__
+        self.send(self.codec.encode(str))
 
     def getreply(self):
         """Get a reply from the server.
@@ -339,14 +344,21 @@ class SMTP:
         Raises SMTPServerDisconnected if end-of-file is reached.
         """
         resp=[]
-        if self.file is None:
-            self.file = self.sock.makefile('rb')
+        # __ILEC400__  don't use makefile
         while 1:
-            line = self.file.readline()
-            if line == '':
+            data = self.codec.decode(self.sock.recv(BUFFERLEN))
+            if not data:
                 self.close()
                 raise SMTPServerDisconnected("Connection unexpectedly closed")
-            if self.debuglevel > 0: print>>stderr, 'reply:', repr(line)
+            datalist.append(data)
+            if data[-1] != '\n': continue
+            # more lines ?
+            data = ''.join(datalist)
+            i = data.rfind('\n', 0 ,len(data)-1)
+            if i == -1: i = 0
+            if data[i+3] != '-': break
+        # not more lines
+        for line in data.rstrip().split('\n'):
             resp.append(line[4:].strip())
             code=line[:3]
             # Check that the error code is syntactically correct.
@@ -465,7 +477,8 @@ class SMTP:
         self.putcmd("rcpt","TO:%s%s" % (quoteaddr(recip),optionlist))
         return self.getreply()
 
-    def data(self,msg):
+    # __ILEC400__, encodemsg
+    def data(self,msg, encodemsg):
         """SMTP 'DATA' command -- sends message data to server.
 
         Automatically quotes lines beginning with a period per rfc821.
@@ -483,7 +496,11 @@ class SMTP:
             if q[-2:] != CRLF:
                 q = q + CRLF
             q = q + "." + CRLF
-            self.send(q)
+            # __ILEC400__
+            if encodemsg:
+                self.send(self.codec.encode(q))
+            else:
+                self.send(q)
             (code,msg)=self.getreply()
             if self.debuglevel >0 : print>>stderr, "data:", (code,msg)
             return (code,msg)
@@ -686,7 +703,8 @@ class SMTP:
             # the server refused all our recipients
             self.rset()
             raise SMTPRecipientsRefused(senderrs)
-        (code,resp) = self.data(msg)
+        # __ILEC400__ encodemsg
+        (code,resp) = self.data(msg, encodemsg)
         if code != 250:
             self.rset()
             raise SMTPDataError(code, resp)

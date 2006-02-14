@@ -36,6 +36,9 @@ python ftplib.py -d localhost -l -p -l
 
 import os
 import sys
+import string
+import os400
+latin1 = os400.Codec('latin1')
 
 # Import SOCKS module if it exists, else standard socket module socket
 try:
@@ -167,7 +170,7 @@ class FTP:
     def putline(self, line):
         line = line + CRLF
         if self.debugging > 1: print '*put*', self.sanitize(line)
-        self.sock.sendall(line)
+        self.sock.sendall(latin1.encode(line))
 
     # Internal: send one command to the server (through putline())
     def putcmd(self, line):
@@ -177,7 +180,7 @@ class FTP:
     # Internal: return one line from the server, stripping CRLF.
     # Raise EOFError if the connection is closed
     def getline(self):
-        line = self.file.readline()
+        line = latin1.decode(self.file.readline())
         if self.debugging > 1:
             print '*get*', self.sanitize(line)
         if not line: raise EOFError
@@ -230,7 +233,7 @@ class FTP:
         tried.  Instead, just send the ABOR command as OOB data.'''
         line = 'ABOR' + CRLF
         if self.debugging > 1: print '*put urgent*', self.sanitize(line)
-        self.sock.sendall(line, MSG_OOB)
+        self.sock.sendall(latin1.encode(line), MSG_OOB)
         resp = self.getmultiline()
         if resp[:3] not in ('426', '226'):
             raise error_proto, resp
@@ -430,7 +433,7 @@ class FTP:
             if buf[-2:] != CRLF:
                 if buf[-1] in CRLF: buf = buf[:-1]
                 buf = buf + CRLF
-            conn.sendall(buf)
+            conn.sendall(latin1.encode(buf))
         conn.close()
         return self.voidresp()
 

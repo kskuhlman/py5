@@ -31,6 +31,11 @@
 #define GITBRANCH ""
 #endif
 
+#ifdef __ILEC400__
+#include "as400misc.h"
+#endif
+
+
 const char *
 Py_GetBuildInfo(void)
 {
@@ -42,9 +47,17 @@ Py_GetBuildInfo(void)
     const char *gitid = _Py_gitidentifier();
     if (!(*gitid))
         gitid = "default";
+#ifdef __ILEC400__
+    char *p = buildinfo + 1;
+    strFromCp37("#", buildinfo);
+    PyOS_snprintf(p, sizeof(buildinfo) - 1,
+                  "%s%s%s, %.20s, %.9s", gitid, sep, revision,
+                  DATE, TIME); 
+#else
     PyOS_snprintf(buildinfo, sizeof(buildinfo),
                   "%s%s%s, %.20s, %.9s", gitid, sep, revision,
                   DATE, TIME);
+#endif
     return buildinfo;
 }
 

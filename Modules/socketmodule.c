@@ -273,6 +273,10 @@ http://cvsweb.netbsd.org/bsdweb.cgi/src/lib/libc/net/getaddrinfo.c.diff?r1=1.82&
 #include <netdb.h>
 #endif
 
+#ifdef __ILEC400__
+#define AF_UNSPEC 0
+#endif
+
 /* Irix 6.5 fails to define this variable at all. This is needed
    for both GCC and SGI's compiler. I'd say that the SGI headers
    are just busted. Same thing for Solaris. */
@@ -5558,7 +5562,11 @@ inet_pton(int af, const char *src, void *dst)
 #error "Not sure if in_addr_t exists and int is not 32-bits."
 #endif
         unsigned int packed_addr;
+#ifdef __ILEC400__
+        packed_addr = inet_addr((char*)src);
+#else
         packed_addr = inet_addr(src);
+#endif
         if (packed_addr == INADDR_NONE)
             return 0;
         memcpy(dst, &packed_addr, 4);

@@ -10,6 +10,10 @@ PyDoc_STRVAR(cPickle_module_documentation,
 #define Py_eval_input eval_input
 #endif /* Py_eval_input */
 
+#ifdef __ILEC400__
+#include <as400misc.h>
+#endif
+
 #define DEL_LIST_SLICE(list, from, to) (PyList_SetSlice(list, from, to, NULL))
 
 #define WRITE_BUF_SIZE 256
@@ -29,6 +33,49 @@ PyDoc_STRVAR(cPickle_module_documentation,
  * Pickle opcodes.  These must be kept in synch with pickle.py.  Extensive
  * docs are in pickletools.py.
  */
+#ifdef __ILEC400__
+#define MARK        '\x28'
+#define STOP        '\x2e'
+#define POP         '\x30'
+#define POP_MARK    '\x31'
+#define DUP         '\x32'
+#define FLOAT       '\x46'
+#define BINFLOAT    '\x47'
+#define INT         '\x49'
+#define BININT      '\x4a'
+#define BININT1     '\x4b'
+#define LONG        '\x4c'
+#define BININT2     '\x4d'
+#define NONE        '\x4e'
+#define PERSID      '\x50'
+#define BINPERSID   '\x51'
+#define REDUCE      '\x52'
+#define STRING      '\x53'
+#define BINSTRING   '\x54'
+#define SHORT_BINSTRING '\x55'
+#define UNICODE     '\x56'
+#define BINUNICODE  '\x58'
+#define APPEND      '\x61'
+#define BUILD       '\x62'
+#define GLOBAL      '\x63'
+#define DICT        '\x64'
+#define EMPTY_DICT  '\x7d'
+#define APPENDS     '\x65'
+#define GET         '\x67'
+#define BINGET      '\x68'
+#define INST        '\x69'
+#define LONG_BINGET '\x6a'
+#define LIST        '\x6c'
+#define EMPTY_LIST  '\x5d'
+#define OBJ         '\x6f'
+#define PUT         '\x70'
+#define BINPUT      '\x71'
+#define LONG_BINPUT '\x72'
+#define SETITEM     '\x73'
+#define TUPLE       '\x74'
+#define EMPTY_TUPLE '\x29'
+#define SETITEMS    '\x75'
+#else
 #define MARK        '('
 #define STOP        '.'
 #define POP         '0'
@@ -70,6 +117,7 @@ PyDoc_STRVAR(cPickle_module_documentation,
 #define TUPLE       't'
 #define EMPTY_TUPLE ')'
 #define SETITEMS    'u'
+#endif
 
 /* Protocol 2. */
 #define PROTO    '\x80' /* identify pickle protocol */
@@ -90,10 +138,18 @@ PyDoc_STRVAR(cPickle_module_documentation,
  * as ints, but unpicklers after can recognize that bools were intended.
  * Note that protocol 2 added direct ways to pickle bools.
  */
+#ifdef __ILEC400__
+#undef TRUE
+#define TRUE        "\x49\xf0\xf1\n"
+#undef FALSE
+#define FALSE       "\x49\xf0\xf0\n"
+#else
 #undef TRUE
 #define TRUE        "I01\n"
 #undef FALSE
 #define FALSE       "I00\n"
+#endif
+
 
 /* Keep in synch with pickle.Pickler._BATCHSIZE.  This is how many elements
  * batch_list/dict() pumps out before doing APPENDS/SETITEMS.  Nothing will
@@ -1327,6 +1383,9 @@ modified_EncodeRawUnicodeEscape(const Py_UNICODE *s, Py_ssize_t size)
     PyObject *repr;
     char *p;
     char *q;
+#ifdef __ILEC400__
+    mbstate_t ps = 0;
+#endif
 
     static const char *hexdigit = "0123456789abcdef";
 #ifdef Py_UNICODE_WIDE
@@ -1390,7 +1449,11 @@ modified_EncodeRawUnicodeEscape(const Py_UNICODE *s, Py_ssize_t size)
         }
 #endif
         /* Map 16-bit characters to '\uxxxx' */
+#ifdef __ILEC400__
+        if (ch >= 256 || ch == L'\\' || ch == L'\n') {
+#else
         if (ch >= 256 || ch == '\\' || ch == '\n') {
+#endif
             *p++ = '\\';
             *p++ = 'u';
             *p++ = hexdigit[(ch >> 12) & 0xf];
@@ -1399,8 +1462,16 @@ modified_EncodeRawUnicodeEscape(const Py_UNICODE *s, Py_ssize_t size)
             *p++ = hexdigit[ch & 15];
         }
         /* Copy everything else as-is */
+#ifdef __ILEC400__
+        else {
+                char s2[2];
+                wcrtomb(s2, ch, &ps);
+            *p++ = s2[0];
+        }
+#else
         else
             *p++ = (char) ch;
+#endif
     }
     *p = '\0';
     _PyString_Resize(&repr, p - q);
@@ -5875,7 +5946,9 @@ static int
 init_stuff(PyObject *module_dict)
 {
     PyObject *copyreg, *t, *r;
-
+#ifdef __ILEC400__
+    char ss[300];
+#endif
 #define INIT_STR(S) if (!( S ## _str=PyString_InternFromString(#S)))  return -1;
 
     if (PyType_Ready(&Unpicklertype) < 0)
@@ -5938,11 +6011,20 @@ init_stuff(PyObject *module_dict)
         return -1;
 
     if (!( t=PyDict_New()))  return -1;
+#ifdef __ILEC400__
+    strFromCp37(
+       "def __init__(self, *args): self.args=args\n\n"
+       "def __str__(self):\n"
+       "  return self.args and ('%s' % self.args[0]) or '(what)'\n",
+       ss);
+	if (!( r=PyRun_String(ss, Py_file_input, module_dict, t)))  return -1;
+#else
     if (!( r=PyRun_String(
                    "def __str__(self):\n"
                    "  return self.args and ('%s' % self.args[0]) or '(what)'\n",
                    Py_file_input,
                    module_dict, t)  ))  return -1;
+#endif
     Py_DECREF(r);
 
     PickleError = PyErr_NewException("cPickle.PickleError", NULL, t);
@@ -5957,6 +6039,16 @@ init_stuff(PyObject *module_dict)
         return -1;
 
     if (!( t=PyDict_New()))  return -1;
+#ifdef __ILEC400__
+    strFromCp37(
+       "def __init__(self, *args): self.args=args\n\n"
+       "def __str__(self):\n"
+       "  a=self.args\n"
+       "  a=a and type(a[0]) or '(what)'\n"
+       "  return 'Cannot pickle %s objects' % a\n",
+       ss);
+	if (!( r=PyRun_String(ss, Py_file_input, module_dict, t)))  return -1;
+#else
     if (!( r=PyRun_String(
                    "def __str__(self):\n"
                    "  a=self.args\n"
@@ -5964,12 +6056,12 @@ init_stuff(PyObject *module_dict)
                    "  return 'Cannot pickle %s objects' % a\n"
                    , Py_file_input,
                    module_dict, t)  ))  return -1;
+#endif
     Py_DECREF(r);
 
     if (!( UnpickleableError = PyErr_NewException(
                    "cPickle.UnpickleableError", PicklingError, t)))
         return -1;
-
     Py_DECREF(t);
 
     if (!( UnpicklingError = PyErr_NewException("cPickle.UnpicklingError",

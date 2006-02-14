@@ -359,7 +359,11 @@ getaddrinfo(const char*hostname, const char*servname,
                 fprintf(stderr, "panic!\n");
                 break;
             }
+#ifdef __ILEC400__
+            if ((sp = getservbyname((char*)servname, proto)) == NULL)
+#else
             if ((sp = getservbyname(servname, proto)) == NULL)
+#endif
                 ERR(EAI_SERVICE);
             port = sp->s_port;
             if (pai->ai_socktype == GAI_ANY) {
@@ -500,7 +504,11 @@ get_name(addr, gai_afd, res, numaddr, pai, port0)
 #ifdef ENABLE_IPV6
     hp = getipnodebyaddr(addr, gai_afd->a_addrlen, gai_afd->a_af, &h_error);
 #else
+#ifdef __ILEC400__
+    hp = gethostbyaddr((char*)addr, gai_afd->a_addrlen, AF_INET);
+#else
     hp = gethostbyaddr(addr, gai_afd->a_addrlen, AF_INET);
+#endif
 #endif
     if (hp && hp->h_name && hp->h_name[0] && hp->h_addr_list[0]) {
         GET_AI(cur, gai_afd, hp->h_addr_list[0], port);
@@ -552,7 +560,11 @@ get_addr(hostname, af, res, pai, port0)
     } else
         hp = getipnodebyname(hostname, af, AI_ADDRCONFIG, &h_error);
 #else
+#ifdef __ILEC400__
+    hp = gethostbyname((char*)hostname);
+#else
     hp = gethostbyname(hostname);
+#endif
     h_error = h_errno;
 #endif
     if (hp == NULL) {

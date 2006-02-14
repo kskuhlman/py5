@@ -6,6 +6,10 @@
 #include <sys/types.h>
 #include <string.h>
 
+#ifdef __ILEC400__
+#include "as400misc.h"
+#endif
+
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #endif
@@ -358,7 +362,46 @@ search_for_exec_prefix(char *argv0_path, char *home)
     return 0;
 }
 
-
+#ifdef __ILEC400__
+/* calculate path for AS/400 (may change in the future) */
+static void
+calculate_path(void)
+{
+    static char delimiter[2] = {DELIM, '\0'};
+    static char separator[2] = {SEP, '\0'};
+    char *rtpypath = getenv("PYTHONPATH");
+    char *home = getpythonhome();
+    char *prog = Py_GetProgramName();
+    char *ptr;
+    char *buf;
+    size_t bufsz;
+    /* prefix and exec_prefix  */
+    strncpy(prefix, home, MAXPATHLEN);
+    strncpy(exec_prefix, home, MAXPATHLEN);
+    /* progpath (same as library) */
+    strncpy(progpath, prog, MAXPATHLEN);
+    ptr = strchr(progpath, SEP);
+    if (ptr)
+        *ptr = '\0';
+    /* path */
+    bufsz = strlen(prefix)*2 + 2 + strlen("libsite-packages") + 2;
+    if (rtpypath)
+        bufsz += strlen(rtpypath) + 1;
+    ptr = PyMem_Malloc(bufsz);
+    strcpy(ptr, prefix);
+    strcat(ptr, separator);
+    strcat(ptr, "lib");
+    strcat(ptr, delimiter);
+    strcat(ptr, prefix);
+    strcat(ptr, separator);
+    strcat(ptr, "site-packages");
+    if (rtpypath) {
+        strcat(ptr, delimiter);
+        strcat(ptr, rtpypath);
+    }
+    module_search_path = ptr;
+}
+#else
 static void
 calculate_path(void)
 {
@@ -651,6 +694,7 @@ calculate_path(void)
         strncpy(exec_prefix, EXEC_PREFIX, MAXPATHLEN);
 }
 
+#endif /* __ILEC400__ */
 
 /* External interface */
 

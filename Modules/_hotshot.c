@@ -30,7 +30,7 @@ typedef __int64 hs_time;
 #ifndef HAVE_GETTIMEOFDAY
 #error "This module requires gettimeofday() on non-Windows platforms!"
 #endif
-#if (defined(PYOS_OS2) && defined(PYCC_GCC)) || defined(__QNX__)
+#if (defined(PYOS_OS2) && defined(PYCC_GCC)) || defined(__QNX__) || defined(__ILEC400__)
 #include <sys/time.h>
 #else
 #include <sys/resource.h>
@@ -931,7 +931,7 @@ calibrate(void)
 #endif
     }
 #if defined(MS_WINDOWS) || defined(PYOS_OS2) || \
-    defined(__VMS) || defined (__QNX__)
+    defined(__VMS) || defined(__ILEC400__) || defined (__QNX__)
     rusage_diff = -1;
 #else
     {

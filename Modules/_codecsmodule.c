@@ -569,6 +569,24 @@ charmap_decode(PyObject *self,
     return codec_tuple(unicode, pbuf.len);
 }
 
+#ifdef __ILEC400__
+static PyObject *
+ebcdic_decode(PyObject *self,
+	     PyObject *args)
+{
+    const char *data;
+    int size;
+    const char *errors = NULL;
+
+    if (!PyArg_ParseTuple(args, "t#|z:ebcdic_decode",
+			  &data, &size, &errors))
+	return NULL;
+
+    return codec_tuple(PyUnicode_DecodeEbcdic(data, size, errors),
+		       size);
+}
+#endif
+
 #if defined(MS_WINDOWS) && defined(HAVE_USABLE_WCHAR_T)
 
 static PyObject *
@@ -973,6 +991,31 @@ charmap_encode(PyObject *self,
     return v;
 }
 
+#ifdef __ILEC400__
+static PyObject *
+ebcdic_encode(PyObject *self,
+	     PyObject *args)
+{
+    PyObject *str, *v;
+    const char *errors = NULL;
+
+    if (!PyArg_ParseTuple(args, "O|z:ebcdic_encode",
+			  &str, &errors))
+	return NULL;
+
+    str = PyUnicode_FromObject(str);
+    if (str == NULL)
+	return NULL;
+    v = codec_tuple(PyUnicode_EncodeEbcdic(
+			       PyUnicode_AS_UNICODE(str), 
+			       PyUnicode_GET_SIZE(str),
+			       errors),
+		    PyUnicode_GET_SIZE(str));
+    Py_DECREF(str);
+    return v;
+}
+#endif
+
 static PyObject*
 charmap_build(PyObject *self, PyObject *args)
 {
@@ -1094,6 +1137,10 @@ static PyMethodDef _codecs_functions[] = {
     {"ascii_decode",            ascii_decode,                   METH_VARARGS},
     {"charmap_encode",          charmap_encode,                 METH_VARARGS},
     {"charmap_decode",          charmap_decode,                 METH_VARARGS},
+#ifdef __ILEC400__
+    {"ebcdic_encode", 		ebcdic_encode,			1},
+    {"ebcdic_decode", 		ebcdic_decode,			1},
+#endif
     {"charmap_build",           charmap_build,                  METH_VARARGS},
     {"readbuffer_encode",       readbuffer_encode,              METH_VARARGS},
     {"charbuffer_encode",       charbuffer_encode,              METH_VARARGS},

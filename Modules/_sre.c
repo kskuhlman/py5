@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /*
  * Secret Labs' Regular Expression Engine
  *
@@ -138,6 +139,31 @@ static char sre_char_lower[128] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119,
 120, 121, 122, 123, 124, 125, 126, 127 };
 
+/* FIXME: kk: This is probably slow, but at least doesn't assume ASCII  */ 
+/* FIXME: kk:  (see above)                                              */
+#ifdef __ILEC400__
+
+#define SRE_IS_DIGIT(ch) (isdigit(ch))
+#define SRE_IS_SPACE(ch) (isspace(ch))
+#define SRE_IS_LINEBREAK(ch) ((ch) == '\n')
+#define SRE_IS_ALNUM(ch) (isalnum(ch))
+#define SRE_IS_WORD(ch) (ch == '_' || isalnum(ch))
+static unsigned int sre_lower(unsigned int ch) 
+{
+    return tolower(ch);
+}
+#define SRE_LOC_IS_DIGIT(ch) (isdigit(ch))
+#define SRE_LOC_IS_SPACE(ch) (isspace(ch))
+#define SRE_LOC_IS_LINEBREAK(ch) ((ch) == '\n')
+#define SRE_LOC_IS_ALNUM(ch) (isalnum(ch))
+#define SRE_LOC_IS_WORD(ch) (ch == '_' || isalnum(ch))
+static unsigned int sre_lower_locale(unsigned int ch) 
+{
+    return tolower(ch);
+}
+
+#else
+
 #define SRE_IS_DIGIT(ch)\
     ((ch) < 128 ? (sre_char_info[(ch)] & SRE_DIGIT_MASK) : 0)
 #define SRE_IS_SPACE(ch)\
@@ -162,6 +188,9 @@ static unsigned int sre_lower(unsigned int ch)
 #define SRE_LOC_IS_LINEBREAK(ch) ((ch) == '\n')
 #define SRE_LOC_IS_ALNUM(ch) (!((ch) & ~255) ? isalnum((ch)) : 0)
 #define SRE_LOC_IS_WORD(ch) (SRE_LOC_IS_ALNUM((ch)) || (ch) == '_')
+
+#endif
+
 
 static unsigned int sre_lower_locale(unsigned int ch)
 {

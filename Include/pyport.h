@@ -77,6 +77,11 @@ typedef int		Py_intptr_t;
 typedef unsigned long	Py_uintptr_t;
 typedef long		Py_intptr_t;
 
+#elif defined(__ILEC400__)
+#include <qleawi.h>
+typedef _OPENPTR Py_uintptr_t;
+typedef _OPENPTR Py_intptr_t;
+
 #elif defined(HAVE_LONG_LONG) && (SIZEOF_VOID_P <= SIZEOF_LONG_LONG)
 typedef unsigned PY_LONG_LONG	Py_uintptr_t;
 typedef PY_LONG_LONG		Py_intptr_t;
@@ -85,7 +90,9 @@ typedef PY_LONG_LONG		Py_intptr_t;
 #   error "Python needs a typedef for Py_uintptr_t in pyport.h."
 #endif /* HAVE_UINTPTR_T */
 
+#ifdef HAVE_STDLIB_H
 #include <stdlib.h>
+#endif
 
 #include <math.h> /* Moved here from the math section, before extern "C" */
 

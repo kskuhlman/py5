@@ -435,7 +435,7 @@ decoding_fgets(char *s, int size, struct tok_state *tok)
 			break;
 		} else if (tok->decoding_state > 0) {
 			/* We want a 'raw' read. */
-			line = Py_UniversalNewlineFgets(s, size, 
+			line = Py_UniversalNewlineFgets(s, size,
 							tok->fp, NULL);
 			warn = 1;
 			break;
@@ -454,6 +454,7 @@ decoding_fgets(char *s, int size, struct tok_state *tok)
 		}
 	}
 #ifndef PGEN
+#ifndef __MVS__ /* not applicable to EBCDIC contexts */
 	if (warn && line && !tok->issued_encoding_warning && !tok->encoding) {
 		unsigned char *c;
 		for (c = (unsigned char *)line; *c; c++)
@@ -462,15 +463,16 @@ decoding_fgets(char *s, int size, struct tok_state *tok)
 				break;
 			}
 	}
+#endif
 	if (badchar) {
 		char buf[500];
 		/* Need to add 1 to the line number, since this line
 		   has not been counted, yet.  */
-		sprintf(buf, 
+		sprintf(buf,
 			"Non-ASCII character '\\x%.2x' "
 			"in file %.200s on line %i, "
 			"but no encoding declared; "
-			"see http://www.python.org/peps/pep-0263.html for details", 
+			"see http://www.python.org/peps/pep-0263.html for details",
 			badchar, tok->filename, tok->lineno + 1);
 		/* We don't use PyErr_WarnExplicit() here because
 		   printing the line in question to e.g. a log file
@@ -1183,7 +1185,7 @@ tok_get(register struct tok_state *tok, char **p_start, char **p_end)
 		} while (c != EOF && c != '\n' &&
 			 tp - cbuf + 1 < sizeof(cbuf));
 		*tp = '\0';
-		for (cp = tabforms; 
+		for (cp = tabforms;
 		     cp < tabforms + sizeof(tabforms)/sizeof(tabforms[0]);
 		     cp++) {
 			if ((tp = strstr(cbuf, *cp))) {

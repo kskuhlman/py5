@@ -16,7 +16,7 @@ static PyStringObject *nullstring;
    When the interned string reaches a refcnt of 0 the string deallocation
    function will delete the reference from this dictionary.
 
-   Another way to look at this is that to say that the actual reference 
+   Another way to look at this is that to say that the actual reference
    count of a string is:  s->ob_refcnt + (s->ob_sstate?2:0)
 */
 static PyObject *interned;
@@ -599,7 +599,7 @@ PyObject *PyString_DecodeEscape(const char *s,
 			*p++ = c;
 			break;
 		case 'x':
-			if (isxdigit(Py_CHARMASK(s[0])) 
+			if (isxdigit(Py_CHARMASK(s[0]))
 			    && isxdigit(Py_CHARMASK(s[1]))) {
 				unsigned int x = 0;
 				c = Py_CHARMASK(*s);
@@ -623,7 +623,7 @@ PyObject *PyString_DecodeEscape(const char *s,
 				break;
 			}
 			if (!errors || strcmp(errors, "strict") == 0) {
-				PyErr_SetString(PyExc_ValueError, 
+				PyErr_SetString(PyExc_ValueError,
 						"invalid \\x escape");
 				goto failed;
 			}
@@ -784,8 +784,13 @@ string_print(PyStringObject *op, FILE *fp, int flags)
                         fprintf(fp, "\\n");
                 else if (c == '\r')
                         fprintf(fp, "\\r");
-		else if (c < ' ' || c >= 0x7f)
-			fprintf(fp, "\\x%02x", c & 0xff);
+#ifdef __MVS__ /* EBCDIC */
+else if ( isprint(c)==0 )
+  fprintf(fp, "\\x%02x", c & 0xff);
+#else /*ASCII */
+else if (c < ' ' || c >= 0x7f)
+if printf(fp, "\\x%02x", c & 0xff);
+#endif
 		else
 			fputc(c, fp);
 	}
@@ -815,7 +820,7 @@ PyString_Repr(PyObject *obj, int smartquotes)
 
 		/* figure out which quote to use; single is preferred */
 		quote = '\'';
-		if (smartquotes && 
+		if (smartquotes &&
 		    memchr(op->ob_sval, '\'', op->ob_size) &&
 		    !memchr(op->ob_sval, '"', op->ob_size))
 			quote = '"';
@@ -1172,7 +1177,7 @@ string_subscript(PyStringObject* self, PyObject* item)
 		char* result_buf;
 		PyObject* result;
 
-		if (PySlice_GetIndicesEx((PySliceObject*)item, 
+		if (PySlice_GetIndicesEx((PySliceObject*)item,
 				 PyString_GET_SIZE(self),
 				 &start, &stop, &step, &slicelength) < 0) {
 			return NULL;
@@ -1185,19 +1190,19 @@ string_subscript(PyStringObject* self, PyObject* item)
 			source_buf = PyString_AsString((PyObject*)self);
 			result_buf = PyMem_Malloc(slicelength);
 
-			for (cur = start, i = 0; i < slicelength; 
+			for (cur = start, i = 0; i < slicelength;
 			     cur += step, i++) {
 				result_buf[i] = source_buf[cur];
 			}
 			
-			result = PyString_FromStringAndSize(result_buf, 
+			result = PyString_FromStringAndSize(result_buf,
 							    slicelength);
 			PyMem_Free(result_buf);
 			return result;
 		}
-	} 
+	}
 	else {
-		PyErr_SetString(PyExc_TypeError, 
+		PyErr_SetString(PyExc_TypeError,
 				"string indices must be integers");
 		return NULL;
 	}
@@ -1626,7 +1631,7 @@ string_join(PyStringObject *self, PyObject *orig)
 	}
 
 	/* There are at least two things to join, or else we have a subclass
-	 * of the builtin types in the sequence.  
+	 * of the builtin types in the sequence.
 	 * Do a pre-pass to figure out the total amount of space we'll
 	 * need (sz), see whether any argument is absurd, and defer to
 	 * the Unicode join if appropriate.
@@ -2670,7 +2675,7 @@ string_encode(PyStringObject *self, PyObject *args)
     char *encoding = NULL;
     char *errors = NULL;
     PyObject *v;
-    
+
     if (!PyArg_ParseTuple(args, "|ss:encode", &encoding, &errors))
         return NULL;
     v = PyString_AsEncodedObject((PyObject *)self, encoding, errors);
@@ -2707,7 +2712,7 @@ string_decode(PyStringObject *self, PyObject *args)
     char *encoding = NULL;
     char *errors = NULL;
     PyObject *v;
-    
+
     if (!PyArg_ParseTuple(args, "|ss:decode", &encoding, &errors))
         return NULL;
     v = PyString_AsDecodedObject((PyObject *)self, encoding, errors);
@@ -3442,7 +3447,7 @@ PyTypeObject PyString_Type = {
 	PyObject_GenericGetAttr,		/* tp_getattro */
 	0,					/* tp_setattro */
 	&string_as_buffer,			/* tp_as_buffer */
-	Py_TPFLAGS_DEFAULT | Py_TPFLAGS_CHECKTYPES | 
+	Py_TPFLAGS_DEFAULT | Py_TPFLAGS_CHECKTYPES |
 		Py_TPFLAGS_BASETYPE,		/* tp_flags */
 	string_doc,				/* tp_doc */
 	0,					/* tp_traverse */
@@ -3595,7 +3600,7 @@ formatfloat(char *buf, size_t buflen, int flags,
 	     len = 1 + 50 + 1 + prec = 52 + prec
 
 	   If prec=0 the effective precision is 1 (the leading digit is
-	   always given), therefore increase the length by one. 
+	   always given), therefore increase the length by one.
 
 	*/
 	if ((type == 'g' && buflen <= (size_t)10 + (size_t)prec) ||
@@ -4393,7 +4398,7 @@ void _Py_ReleaseInternedStrings(void)
 	   detector, interned strings are not forcibly deallocated; rather, we
 	   give them their stolen references back, and then clear and DECREF
 	   the interned dict. */
-	   
+	
 	fprintf(stderr, "releasing interned strings\n");
 	n = PyList_GET_SIZE(keys);
 	for (i = 0; i < n; i++) {

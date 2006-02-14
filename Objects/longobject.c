@@ -1212,14 +1212,25 @@ long_from_binary_base(char **str, int base)
 		int k = -1;
 		char ch = *p;
 
+ /* EBCDIC / ASCII PORTABILITY */
+ #ifdef __MVS__
+		if (ch >= '0')
+			k = ch - '0';
+		else if (ch >= 'A')
+			k = ch - 'A' + 10;
+		else if (ch >= 'a')
+			k = ch - 'a' + 10;
+#else
 		if (ch <= '9')
 			k = ch - '0';
 		else if (ch >= 'a')
 			k = ch - 'a' + 10;
 		else if (ch >= 'A')
 			k = ch - 'A' + 10;
+#endif
 		if (k < 0 || k >= base)
 			break;
+
 		++p;
 	}
 	*str = p;
@@ -1244,6 +1255,17 @@ long_from_binary_base(char **str, int base)
 		int k;
 		char ch = *p;
 
+ /* EBCDIC / ASCII PORTABILITY */
+ #ifdef __MVS__
+		if (ch >= '0')
+			k = ch - '0';
+		else if (ch >= 'A')
+			k = ch - 'A' + 10;
+		else {
+			assert(ch >= 'a');
+			k = ch - 'a' + 10;
+		}
+#else
 		if (ch <= '9')
 			k = ch - '0';
 		else if (ch >= 'a')
@@ -1252,6 +1274,8 @@ long_from_binary_base(char **str, int base)
 			assert(ch >= 'A');
 			k = ch - 'A' + 10;
 		}
+#endif
+
 		assert(k >= 0 && k < base);
 		accum |= (twodigits)(k << bits_in_accum);
 		bits_in_accum += bits_per_char;
@@ -1314,12 +1338,24 @@ PyLong_FromString(char *str, char **pend, int base)
 			int k = -1;
 			PyLongObject *temp;
 
+
+ /* EBCDIC / ASCII PORTABILITY */
+ #ifdef __MVS__
+		if (*str >= '0')
+			k = *str - '0';
+		else if (*str >= 'a')
+			k = *str - 'a' + 10;
+		else if (*str >= 'A')
+			k = *str - 'A' + 10;
+#else
 			if (*str <= '9')
 				k = *str - '0';
 			else if (*str >= 'a')
 				k = *str - 'a' + 10;
 			else if (*str >= 'A')
 				k = *str - 'A' + 10;
+#endif
+
 			if (k < 0 || k >= base)
 				break;
 			temp = muladd1(z, (digit)base, (digit)k);

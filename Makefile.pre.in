@@ -349,13 +349,6 @@ $(LIBRARY): $(LIBRARY_OBJS)
 	$(AR) cr $@ $(MODOBJS)
 	$(RANLIB) $@
 
-libpython$(VERSION).so: $(LIBRARY_OBJS)
-	if test $(INSTSONAME) != $(LDLIBRARY); then \
-		$(LDSHARED) -Wl,-h$(INSTSONAME) -o $(INSTSONAME) $(LIBRARY_OBJS) $(SHLIBS) $(LIBC) $(LIBM); \
-		$(LN) -f $(INSTSONAME) $@; \
-	else\
-		$(LDSHARED) -o $@ $(LIBRARY_OBJS) $(SHLIBS) $(LIBC) $(LIBM); \
-	fi
 
 libpython$(VERSION).sl: $(LIBRARY_OBJS)
 	$(LDSHARED) -o $@ $(LIBRARY_OBJS) $(LIBC) $(LIBM)
@@ -392,6 +385,21 @@ $(DLLLIBRARY) libpython$(VERSION).dll.a: $(LIBRARY_OBJS)
 		$(LDSHARED) -Wl,--out-implib=$@ -o $(DLLLIBRARY) $^ \
 			$(LIBS) $(MODLIBS) $(SYSLIBS); \
 	else true; \
+	fi
+
+# This rule builds the MVS Python DLL
+libpython$(VERSION).x: $(LIBRARY_OBJS) $(LIBRARY)
+	@if test -z $(LINKFORSHARED); then \
+	  echo "********************************************" ;\
+	  echo "static generation requested => .DLL NOT BUILT" ;\
+	  echo "********************************************" ;\
+        else \
+	  echo "********************************************" ;\
+	  echo "DYNAMIC DLL building => .DLL BUILT" ;\
+	  echo "********************************************" ;\
+	  $(LINKCC) $(LINKFORSHARED) -o $(DLLLIBRARY) $(MODULE_OBJS) \
+		$(MODOBJS) $(SIGNAL_OBJS) $(PYTHON_OBJS) $(PARSER_OBJS)\
+		$(OBJECT_OBJS) Modules/getbuildinfo.o ; \
 	fi
 
 
@@ -951,8 +959,11 @@ TAGS::
 
 clean:
 	find . -name '*.o' -exec rm -f {} ';'
+	find . -name '*.x' -exec rm -f {} ';'
 	find . -name '*.s[ol]' -exec rm -f {} ';'
+	find . -name '*.dll' -exec rm -f {} ';'
 	find $(srcdir) -name '*.py[co]' -exec rm -f {} ';'
+	rm python
 
 clobber: clean
 	-rm -f $(BUILDPYTHON) $(PGEN) $(LIBRARY) $(LDLIBRARY) $(DLLLIBRARY) \

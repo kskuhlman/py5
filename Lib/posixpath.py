@@ -11,7 +11,11 @@ for manipulation of the pathname component of URLs.
 """
 
 import os
-import stat
+import sys
+if sys.platform == 'mvs':
+  import statmvs as stat
+else:
+  import stat
 
 __all__ = ["normcase","isabs","join","splitdrive","split","splitext",
            "basename","dirname","commonprefix","getsize","getmtime",

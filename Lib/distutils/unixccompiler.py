@@ -109,7 +109,10 @@ class UnixCCompiler(CCompiler):
 
     def _compile(self, obj, src, ext, cc_args, extra_postargs, pp_opts):
         try:
-            self.spawn(self.compiler_so + cc_args + [src, '-o', obj] +
+            # @@JYM putting the -o obj before src for mvs
+            # support , this should not hurt other unix c
+            # compiler's implementations
+            self.spawn(self.compiler_so + cc_args + ['-o', obj , src ] +
                        extra_postargs)
         except DistutilsExecError, msg:
             raise CompileError, msg
@@ -157,8 +160,18 @@ class UnixCCompiler(CCompiler):
             output_filename = os.path.join(output_dir, output_filename)
 
         if self._need_link(objects, output_filename):
-            ld_args = (objects + self.objects +
-                       lib_opts + ['-o', output_filename])
+            # MVS C compiler not comfortable with trailing -o
+            if sys.platform == 'mvs':
+              # hardcode the dynamic link exported .so entries
+              lib_opts = ['libpython2.4.x']
+              ld_args = (['-o',output_filename] + objects +
+                         self.objects + lib_opts )
+              print 'ldarg=' , ld_args
+              print 'extrp=' , extra_preargs
+              print 'extrpos=' , extra_postargs
+            else:
+              ld_args = (objects + self.objects +
+                         lib_opts + ['-o', output_filename])
             if debug:
                 ld_args[:0] = ['-g']
             if extra_preargs:

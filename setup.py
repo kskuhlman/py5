@@ -360,7 +360,7 @@ class PyBuildExt(build_ext):
 
         # fcntl(2) and ioctl(2)
         exts.append( Extension('fcntl', ['fcntlmodule.c']) )
-        if platform not in ['mac']:
+        if platform not in ['mac','mvs']:
                 # pwd(3)
             exts.append( Extension('pwd', ['pwdmodule.c']) )
             # grp(3)
@@ -385,7 +385,8 @@ class PyBuildExt(build_ext):
 
         # cStringIO and cPickle
         exts.append( Extension('cStringIO', ['cStringIO.c']) )
-        exts.append( Extension('cPickle', ['cPickle.c']) )
+        if platform not in ['mvs']:
+          exts.append( Extension('cPickle', ['cPickle.c']) )
 
         # Memory-mapped files (also works on Win32).
         if platform not in ['atheos', 'mac']:
@@ -656,7 +657,7 @@ class PyBuildExt(build_ext):
                                    libraries = ['gdbm'] ) )
 
         # Unix-only modules
-        if platform not in ['mac', 'win32']:
+        if platform not in ['mac', 'win32','mvs']:
             # Steen Lumholt's termios module
             exts.append( Extension('termios', ['termios.c']) )
             # Jeremy Hylton's rlimit interface
@@ -679,7 +680,7 @@ class PyBuildExt(build_ext):
             exts.append( Extension('_curses', ['_cursesmodule.c'],
                                    libraries = curses_libs) )
         elif (self.compiler.find_library_file(lib_dirs, 'curses')
-              and platform != 'darwin'):
+              and platform != 'darwin' and platform != 'mvs' ):
                 # OSX has an old Berkeley curses, not good enough for
                 # the _curses module.
             if (self.compiler.find_library_file(lib_dirs, 'terminfo')):

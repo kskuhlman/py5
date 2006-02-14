@@ -116,6 +116,20 @@ then
 	ac_md_release=`echo $ac_sys_release |
 			   tr -d '[/ ]' | sed 's/^[[A-Z]]\.//' | sed 's/\..*//'`
 	MACHDEP="$ac_md_system$ac_md_release"
+#
+# check for mvs unix system familly
+#
+        AC_MSG_CHECKING(is the os an IBM/MVS OE system)
+# testing OS/390 this may need to be updated for zos  
+	if test "$ac_sys_system" = "OS/390"
+	then
+	  AC_MSG_RESULT(yes)         
+	  MACHDEP="mvs"
+        else
+	  AC_MSG_RESULT(no)         
+	  MACHDEP="$ac_md_system$ac_md_release"
+	fi 
+# end of OS/39O test 
 
 	case $MACHDEP in
 	cygwin*) MACHDEP="cygwin";;
@@ -176,7 +190,6 @@ case $ac_sys_system/$ac_sys_release in
   Darwin/8.*)
     define_xopen_source=no
     ;;
-
 esac
 
 if test $define_xopen_source = yes
@@ -187,6 +200,10 @@ then
     SunOS/5.8|SunOS/5.9)
       AC_DEFINE(_XOPEN_SOURCE, 500, 
                 Define to the level of X/Open that your system supports)
+      ;;
+    OS/390/*)
+      AC_DEFINE(_XOPEN_SOURCE,500,
+                supported XOPEN for OS390 )
       ;;
     *)
       AC_DEFINE(_XOPEN_SOURCE, 600, 
@@ -200,9 +217,20 @@ then
   # cases for HP-UX, we define it globally.
   
   AC_DEFINE(_XOPEN_SOURCE_EXTENDED, 1, Define to activate Unix95-and-earlier features)
-
-  AC_DEFINE(_POSIX_C_SOURCE, 200112L, Define to activate features from IEEE Stds 1003.1-2001)
-  
+  AC_MSG_CHECKING( For POSIX specificity on OS390)
+  if test "$ac_sys_system" = "OS/390"
+  then
+    AC_MSG_RESULT(yes) 
+    AC_DEFINE(_OPEN_THREADS)
+    AC_DEFINE(_POSIX_THREADS)
+    AC_DEFINE(_POSIX_C_SOURCE,2,accepted level for MVS)  
+  else 
+    # definition of _XOPEN_SOURCE_EXTENDED and _POSIX_C_SOURCE, or else
+    # several APIs are not declared. Since this is also needed in some
+    # cases for HP-UX, we define it globally.
+    AC_MSG_RESULT(no)
+    AC_DEFINE(_POSIX_C_SOURCE, 200112L, Define to activate features from IEEE Stds 1003.1-2001)
+  fi  
 fi
 
 #
@@ -458,6 +486,18 @@ DLLLIBRARY=''
 LDLIBRARYDIR=''
 RUNSHARED=''
 
+# do we have requested static LINK on IBM/MVS platform
+AC_MSG_CHECKING(for --with-zdll)
+AC_ARG_WITH(zdll,
+           [  --with(out)-zdll                use DLL on MVS/Z mainframes], [
+            ZDLL="yes"
+    	    LDLIBRARY='libpython$(VERSION).x'
+    	    DLLLIBRARY='libpython$(VERSION).dll'
+            AC_MSG_RESULT(yes)] ,
+            [ ZDLL="no"
+              AC_MSG_RESULT(no)])
+# end of static link request for Z
+
 # LINKCC is the command that links the python executable -- default is $(CC).
 # If CXX is set, and if it is needed to link a main function that was
 # compiled with CXX, LINKCC is CXX instead. Always using CXX is undesirable:
@@ -590,6 +630,11 @@ if test $enable_shared = "yes"; then
 	  BLDLIBRARY='-L. -lpython$(VERSION)'
 	  RUNSHARED=DLL_PATH=`pwd`:${DLL_PATH:-/atheos/sys/libs:/atheos/autolnk/lib}
 	  ;;
+    mvs*)
+    	LDLIBRARY='libpython$(VERSION).x'
+    	DLLLIBRARY='libpython$(VERSION).dll'
+	;;
+
   esac
 else # shared is disabled
   case $ac_sys_system in
@@ -696,6 +741,37 @@ then
     esac
 
 fi
+case $ac_sys_system in
+  OS/390*)
+    if test "$Py_DEBUG" = 'true'; then
+      OPT="-g -Wc,\"langlvl(extended)\",RENT,DLL,EXPORTALL" 
+    else
+      OPT="-DNDEBUG -Wc,\"langlvl(extended)\",RENT,DLL,EXPORTALL"
+    fi
+    # provide a minimalistic linking strategy for mvs(-O blows up)
+    # check for XPLINK linker optimization availability
+    AC_MSG_CHECKING(MVS version supports XPLINK optim )
+    AC_CACHE_VAL(ac_cv_xplink_ok,
+    [ac_save_cc="$CC"
+     CC="$CC -Wc,XPLINK -Wl,XPLINK"
+     AC_TRY_RUN([int main() { return 0; }],
+     ac_cv_xplink_ok=yes,
+     ac_cv_xplink_ok=no,
+     ac_cv_xplink_ok=no)
+     CC="$ac_save_cc"])
+    AC_MSG_RESULT($ac_cv_xplink_ok)
+    if test $ac_cv_xplink_ok = yes; then
+      OPT="$OPT,XPLINK,GONUM -Wl,XPLINK"
+      LDFLAGS="-Wc,XPLINK -Wl,XPLINK $CFLAGS" 
+    fi;;
+  *)
+    if test "$Py_DEBUG" = 'true'; then
+      OPT="-g" 
+    else
+      OPT="-DNDEBUG -g"
+    fi;;
+esac
+
 
 AC_SUBST(BASECFLAGS)
 # tweak BASECFLAGS based on compiler and platform
@@ -799,6 +875,7 @@ fi
 AC_MSG_CHECKING(whether pthreads are available without options)
 AC_CACHE_VAL(ac_cv_pthread_is_default,
 [AC_TRY_RUN([
+#include <stdlib.h>
 #include <pthread.h>
 
 void* routine(void* p){return NULL;}
@@ -836,6 +913,7 @@ AC_CACHE_VAL(ac_cv_kpthread,
 [ac_save_cc="$CC"
 CC="$CC -Kpthread"
 AC_TRY_RUN([
+#include <stdlib.h>
 #include <pthread.h>
 
 void* routine(void* p){return NULL;}
@@ -867,6 +945,7 @@ AC_CACHE_VAL(ac_cv_kthread,
 [ac_save_cc="$CC"
 CC="$CC -Kthread"
 AC_TRY_RUN([
+#include <stdlib.h>
 #include <pthread.h>
 
 void* routine(void* p){return NULL;}
@@ -898,6 +977,7 @@ AC_CACHE_VAL(ac_cv_thread,
 [ac_save_cc="$CC"
 CC="$CC -pthread"
 AC_TRY_RUN([
+#include <stdlib.h>
 #include <pthread.h>
 
 void* routine(void* p){return NULL;}
@@ -1160,13 +1240,16 @@ then CC="$CC -pthread"
 fi
 AC_MSG_CHECKING(for pthread_t)
 have_pthread_t=no
-AC_TRY_COMPILE([#include <pthread.h>], [pthread_t x; x = *(pthread_t*)0;], have_pthread_t=yes)
+AC_TRY_COMPILE([
+#include <pthread.h>], [pthread_t x; x = *(pthread_t*)0;], have_pthread_t=yes)
 AC_MSG_RESULT($have_pthread_t)
 if test "$have_pthread_t" = yes ; then
   # AC_CHECK_SIZEOF() doesn't include <pthread.h>.
   AC_MSG_CHECKING(size of pthread_t)
   AC_CACHE_VAL(ac_cv_sizeof_pthread_t,
   [AC_TRY_RUN([#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
 #include <pthread.h>
   main()
   {
@@ -1283,6 +1366,7 @@ then
 	case $ac_sys_system in
 	hp*|HP*)   SO=.sl;;
 	CYGWIN*)   SO=.dll;;
+	OS/390*)   SO=.dll;;
 	*)	   SO=.so;;
 	esac
 else
@@ -1384,6 +1468,12 @@ then
 	SCO_SV*) LDSHARED='$(CC) -Wl,-G,-Bexport';;
 	Monterey*) LDSHARED="cc -G -dy -Bdynamic -Bexport -L/usr/lib/ia64l64";;
 	CYGWIN*) LDSHARED="gcc -shared -Wl,--enable-auto-image-base";;
+	OS/390*)
+	  if test $ac_cv_xplink_ok = yes; then
+	    LDSHARED="cc -Wl,DLL,XPLINK"
+	  else	  
+	    LDSHARED="cc -Wl,DLL"
+	  fi;;
 	atheos*) LDSHARED="gcc -shared";;
 	*)	LDSHARED="ld";;
 	esac
@@ -1421,6 +1511,13 @@ then
 		   *gcc*) CCSHARED="-shared";;
 		   *) CCSHARED="";;
 		   esac;;
+	OS/390*)
+		if test $ac_cv_xplink_ok = yes; then
+		CCSHARED="-Wc,\"DLL,XPLINK,RENT,EXPORTALL\""
+		else	  
+		CCSHARED="-Wc,\"DLL,RENT,EXPORTALL\""
+		fi;;
+
 	atheos*) CCSHARED="-fPIC";;
 	esac
 fi
@@ -1461,6 +1558,13 @@ then
 		then
 			LINKFORSHARED="-Wl,--export-dynamic"
 		fi;;
+	OS/390*)
+		if test $ac_cv_xplink_ok = yes; then
+		LINKFORSHARED="-Wl,\"DLL,XPLINK\""
+		else	  
+		LINKFORSHARED="-Wl,\"DLL\""
+		fi;;
+
 	SunOS/5*) case $CC in
 		  *gcc*)
 		    if $CC -Xlinker --help 2>&1 | grep export-dynamic >/dev/null
@@ -1786,7 +1890,9 @@ if test "$posix_threads" = "yes"; then
 
       AC_MSG_CHECKING(if PTHREAD_SCOPE_SYSTEM is supported)
       AC_CACHE_VAL(ac_cv_pthread_system_supported,
-      [AC_TRY_RUN([#include <pthread.h>
+      [AC_TRY_RUN([
+#include <stdlib.h>
+#include <pthread.h>
       void *foo(void *parm) {
         return NULL;
       }
@@ -2066,6 +2172,11 @@ then
 	hp*|HP*) DYNLOADFILE="dynload_hpux.o";;
 	Darwin/*) DYNLOADFILE="dynload_next.o";;
 	atheos*) DYNLOADFILE="dynload_atheos.o";;
+        OS/390*)
+          if test $ZDLL=yes ; then
+           # only if ZDLL is requested
+            DYNLOADFILE="dynload_mvs.o"
+          fi;;
 	*)
 	# use dynload_shlib.c and dlopen() if we have it; otherwise stub
 	# out any dynamic loading

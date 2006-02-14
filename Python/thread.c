@@ -5,6 +5,11 @@
    which is included by this file dependent on config settings.
    Stuff shared by all thread_*.h files is collected here. */
 
+/* Special flag on MVS to populate pthread types.h defs */
+#ifdef __MVS__
+#define _OPEN_THREADS
+#endif
+
 #include "Python.h"
 
 

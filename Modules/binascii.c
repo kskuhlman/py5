@@ -120,6 +120,10 @@ static unsigned char table_a2b_hqx[256] = {
 	FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL, FAIL,
 };
 
+#ifdef __ILEC400__
+#pragma convert(850)
+#endif
+
 static unsigned char table_b2a_hqx[] =
 "!\"#$%&'()*+,-012345689@ABCDEFGHIJKLMNPQRSTUVXYZ[`abcdefhijklmpqr";
 
@@ -134,7 +138,11 @@ static char table_a2b_base64[] = {
 	41,42,43,44, 45,46,47,48, 49,50,51,-1, -1,-1,-1,-1
 };
 
+#ifdef __ILEC400__
+static unsigned char BASE64_PAD = '=';
+#else
 #define BASE64_PAD '='
+#endif
 
 /* Max binary chunk size; limited only by available memory */
 #define BASE64_MAXBIN (INT_MAX/2 - sizeof(PyStringObject) - 3)
@@ -142,6 +150,9 @@ static char table_a2b_base64[] = {
 static unsigned char table_b2a_base64[] =
 "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+#ifdef __ILEC400__
+#pragma convert(0)
+#endif
 
 
 static unsigned short crctab_hqx[256] = {
@@ -206,6 +217,9 @@ binascii_a2b_uu(PyObject *self, PyObject *args)
 	for( ; bin_len > 0 ; ascii_len--, ascii_data++ ) {
 		/* XXX is it really best to add NULs if there's no more data */
 		this_ch = (ascii_len > 0) ? *ascii_data : 0;
+#ifdef __ILEC400__
+#pragma convert(850)
+#endif
 		if ( this_ch == '\n' || this_ch == '\r' || ascii_len <= 0) {
 			/*
 			** Whitespace. Assume some spaces got eaten at
@@ -219,10 +233,16 @@ binascii_a2b_uu(PyObject *self, PyObject *args)
 			** '`' as zero instead of space.
 			*/
 			if ( this_ch < ' ' || this_ch > (' ' + 64)) {
+#ifdef __ILEC400__
+#pragma convert(0)
+#endif
 				PyErr_SetString(Error, "Illegal char");
 				Py_DECREF(rv);
 				return NULL;
 			}
+#ifdef __ILEC400__
+#pragma convert(850)
+#endif
 			this_ch = (this_ch - ' ') & 077;
 		}
 		/*
@@ -247,6 +267,9 @@ binascii_a2b_uu(PyObject *self, PyObject *args)
 		/* Extra '`' may be written as padding in some cases */
 		if ( this_ch != ' ' && this_ch != ' '+64 &&
 		     this_ch != '\n' && this_ch != '\r' ) {
+#ifdef __ILEC400__
+#pragma convert(0)
+#endif
 			PyErr_SetString(Error, "Trailing garbage");
 			Py_DECREF(rv);
 			return NULL;
@@ -295,10 +318,20 @@ binascii_b2a_uu(PyObject *self, PyObject *args)
 		while ( leftbits >= 6 ) {
 			this_ch = (leftchar >> (leftbits-6)) & 0x3f;
 			leftbits -= 6;
+#ifdef __ILEC400__
+			*ascii_data++ = this_ch + 32;
+#else
 			*ascii_data++ = this_ch + ' ';
+#endif
 		}
 	}
+#ifdef __ILEC400__
+#pragma convert(850)
+#endif
 	*ascii_data++ = '\n';	/* Append a courtesy newline */
+#ifdef __ILEC400__
+#pragma convert(0)
+#endif
 
 	_PyString_Resize(&rv, (ascii_data -
 			       (unsigned char *)PyString_AsString(rv)));
@@ -358,9 +391,15 @@ binascii_a2b_base64(PyObject *self, PyObject *args)
 	for( ; ascii_len > 0; ascii_len--, ascii_data++) {
 		this_ch = *ascii_data;
 
+#ifdef __ILEC400__
+#pragma convert(850)
+#endif
 		if (this_ch > 0x7f ||
 		    this_ch == '\r' || this_ch == '\n' || this_ch == ' ')
 			continue;
+#ifdef __ILEC400__
+#pragma convert(0)
+#endif
 
 		/* Check for pad sequences and ignore
 		** the invalid ones.
@@ -468,7 +507,13 @@ binascii_b2a_base64(PyObject *self, PyObject *args)
 		*ascii_data++ = table_b2a_base64[(leftchar&0xf) << 2];
 		*ascii_data++ = BASE64_PAD;
 	}
+#ifdef __ILEC400__
+#pragma convert(850)
+#endif
 	*ascii_data++ = '\n';	/* Append a courtesy newline */
+#ifdef __ILEC400__
+#pragma convert(0)
+#endif
 
 	_PyString_Resize(&rv, (ascii_data -
 			       (unsigned char *)PyString_AsString(rv)));

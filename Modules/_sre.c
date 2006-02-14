@@ -107,6 +107,29 @@ static char copyright[] =
 
 /* default character predicates (run sre_chars.py to regenerate tables) */
 
+#ifdef __ILEC400__
+
+#define SRE_IS_DIGIT(ch) (isdigit(ch))
+#define SRE_IS_SPACE(ch) (isspace(ch))
+#define SRE_IS_LINEBREAK(ch) ((ch) == '\n')
+#define SRE_IS_ALNUM(ch) (isalnum(ch))
+#define SRE_IS_WORD(ch) (ch == '_' || isalnum(ch))
+static unsigned int sre_lower(unsigned int ch) 
+{
+    return tolower(ch);
+}
+#define SRE_LOC_IS_DIGIT(ch) (isdigit(ch))
+#define SRE_LOC_IS_SPACE(ch) (isspace(ch))
+#define SRE_LOC_IS_LINEBREAK(ch) ((ch) == '\n')
+#define SRE_LOC_IS_ALNUM(ch) (isalnum(ch))
+#define SRE_LOC_IS_WORD(ch) (ch == '_' || isalnum(ch))
+static unsigned int sre_lower_locale(unsigned int ch) 
+{
+    return tolower(ch);
+}
+
+#else
+
 #define SRE_DIGIT_MASK 1
 #define SRE_SPACE_MASK 2
 #define SRE_LINEBREAK_MASK 4

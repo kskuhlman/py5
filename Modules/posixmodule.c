@@ -108,6 +108,22 @@ corresponding Unix manual entries for more information on calls.");
 #else
 #if defined(PYOS_OS2) && defined(PYCC_GCC) || defined(__VMS)
 /* Everything needed is defined in PC/os2emx/pyconfig.h or vms/pyconfig.h */
+#else
+#ifdef __ILEC400__ /* AS/400 C compiler */
+#include <qp0z1170.h>
+#include <spawn.h>
+#define HAVE_SPAWN      1
+#define HAVE_GETCWD
+#define HAVE_GETEGID    1
+#define HAVE_GETEUID    1
+#define HAVE_GETGID     1
+#define HAVE_GETPPID    1
+#define HAVE_GETUID     1
+#define HAVE_KILL
+#define HAVE_OPENDIR    1
+#define HAVE_PIPE       1
+#define HAVE_SYSTEM 1
+#define HAVE_WAIT       1
 #else			/* all other compilers */
 /* Unix functions that the configure script doesn't check for */
 #define HAVE_EXECV      1
@@ -130,6 +146,7 @@ corresponding Unix manual entries for more information on calls.");
 #define HAVE_SYSTEM	1
 #define HAVE_WAIT       1
 #define HAVE_TTYNAME	1
+#endif  /* __ILEC400__ */
 #endif  /* PYOS_OS2 && PYCC_GCC && __VMS */
 #endif  /* _MSC_VER */
 #endif  /* __BORLANDC__ */
@@ -1848,10 +1865,14 @@ Rename a file or directory.");
 static PyObject *
 posix_rename(PyObject *self, PyObject *args)
 {
+#ifdef __ILEC400__
+    return posix_2str(args, "etet:rename", Qp0lRenameKeep, NULL, NULL);
+#else
 #ifdef MS_WINDOWS
 	return posix_2str(args, "etet:rename", rename, "OO:rename", _wrename);
 #else
 	return posix_2str(args, "etet:rename", rename, NULL, NULL);
+#endif
 #endif
 }
 
@@ -2122,9 +2143,85 @@ posix__exit(PyObject *self, PyObject *args)
 	int sts;
 	if (!PyArg_ParseTuple(args, "i:_exit", &sts))
 		return NULL;
-	_exit(sts);
+#ifdef __ILEC400__ 
+    exit(sts);
+#else
+    _exit(sts);
+#endif
 	return NULL; /* Make gcc -Wall happy */
 }
+
+/* __ILEC400__  spawn  */
+#ifdef HAVE_SPAWN
+
+static char posix_spawn__doc__[] =
+"spawn(path, args)\n\
+Starts a child process, returns child pid.(AS/400).\n\
+\n\
+    path: path of executable file\n\
+    args: tuple or list of strings";
+
+static PyObject *
+posix_spawn(PyObject *self, PyObject *args)
+{
+    char *path;
+    PyObject *argv;
+    char **spawn_argv;
+    char *spawn_envp[2];
+    char pyhome[100], *pyhv;
+    struct inheritance  inherit;
+    int i, argc, pid;
+
+    PyObject *(*getitem)(PyObject *, int);
+    /* spawn has two arguments: (path, argv), where
+       argv is a list or tuple of strings. */
+    if (!PyArg_ParseTuple(args, "sO:spawn", &path, &argv))
+        return NULL;
+    if (PyList_Check(argv)) {
+        argc = PyList_Size(argv);
+        getitem = PyList_GetItem;
+    }
+    else if (PyTuple_Check(argv)) {
+        argc = PyTuple_Size(argv);
+        getitem = PyTuple_GetItem;
+    }
+    else {
+        PyErr_SetString(PyExc_TypeError, "argv must be tuple or list");
+        return NULL;
+    }
+    spawn_argv = PyMem_NEW(char *, argc+1);
+    if (spawn_argv == NULL)
+        return NULL;
+    for (i = 0; i < argc; i++) {
+        if (!PyArg_Parse((*getitem)(argv, i), "s", &spawn_argv[i])) {
+            PyMem_DEL(spawn_argv);
+            PyErr_SetString(PyExc_TypeError, 
+                    "all arguments must be strings");
+            return NULL;        
+        }
+    }
+    spawn_argv[argc] = NULL;
+    /* only inherit pythonhome */
+    pyhv = getenv("PYTHONHOME");
+    if (pyhv) {
+        strcpy(pyhome, "PYTHONHOME=");
+        strcat(pyhome, pyhv);
+        spawn_envp[0] = pyhome;
+        spawn_envp[1] = NULL;
+    } else {
+        spawn_envp[0] = NULL;
+    }
+    /* inherit structure, set thread valid */
+    memset(&inherit, 0, sizeof(inherit));
+    /* inherit.flags = SPAWN_SETTHREAD_NP; */
+    /* Create child process */
+    pid = spawn(path, 0, NULL, &inherit, spawn_argv, spawn_envp);
+    PyMem_DEL(spawn_argv);
+    if (pid == -1)
+        return posix_error();
+    return PyInt_FromLong((long)pid);
+}
+#endif  /* HAVE_SPAWN (__ILEC400__)_ */
 
 #if defined(HAVE_EXECV) || defined(HAVE_SPAWNV)
 static void
@@ -7348,6 +7445,9 @@ static PyMethodDef posix_methods[] = {
 	{"execv",	posix_execv, METH_VARARGS, posix_execv__doc__},
 	{"execve",	posix_execve, METH_VARARGS, posix_execve__doc__},
 #endif /* HAVE_EXECV */
+#ifdef HAVE_SPAWN  /* __ILEC400__ */
+    {"spawn",   posix_spawn, METH_VARARGS, posix_spawn__doc__},
+#endif
 #ifdef HAVE_SPAWNV
 	{"spawnv",	posix_spawnv, METH_VARARGS, posix_spawnv__doc__},
 	{"spawnve",	posix_spawnve, METH_VARARGS, posix_spawnve__doc__},

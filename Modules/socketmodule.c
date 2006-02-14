@@ -221,6 +221,7 @@ shutdown(how) -- shut down traffic in one or both directions\n\
 
 /* Generic includes */
 #include <sys/types.h>
+#include <signal.h>
 
 /* Generic socket object definitions and includes */
 #define PySocket_BUILDING_SOCKET
@@ -260,7 +261,9 @@ int h_errno; /* not used */
 
 #endif
 
-#include <stddef.h>
+#ifdef HAVE_STDDEF_H
+# include <stddef.h>
+#endif
 
 #ifndef offsetof
 # define offsetof(type, member)	((size_t)(&((type *)0)->member))
@@ -289,6 +292,9 @@ int inet_pton(int af, const char *src, void *dst);
 const char *inet_ntop(int af, const void *src, char *dst, socklen_t size);
 #endif
 
+#ifdef __ILEC400__
+#define AF_UNSPEC 0
+#endif
 #ifdef __APPLE__
 /* On OS X, getaddrinfo returns no error indication of lookup
    failure, so we must use the emulation instead of the libinfo
@@ -4636,7 +4642,11 @@ inet_pton(int af, const char *src, void *dst)
 {
 	if (af == AF_INET) {
 		long packed_addr;
-		packed_addr = inet_addr(src);
+#ifdef __ILEC400__
+        packed_addr = inet_addr((char*)src);
+#else
+        packed_addr = inet_addr(src);
+#endif
 		if (packed_addr == INADDR_NONE)
 			return 0;
 		memcpy(dst, &packed_addr, 4);

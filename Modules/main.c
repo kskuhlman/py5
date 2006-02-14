@@ -176,6 +176,10 @@ Py_Main(int argc, char **argv)
 	int saw_inspect_flag = 0;
 	int saw_unbuffered_flag = 0;
 	PyCompilerFlags cf;
+#ifdef __ILEC400__
+    PyObject *av;
+    int i;
+#endif
 
 	cf.cf_flags = 0;
 
@@ -329,6 +333,11 @@ Py_Main(int argc, char **argv)
 	if (command == NULL && module == NULL && _PyOS_optind < argc &&
 	    strcmp(argv[_PyOS_optind], "-") != 0)
 	{
+#ifdef __ILEC400__
+            /* overide output to QPRINT */
+        system("ovrdbf stdout qprint");
+        system("ovrdbf stderr qprint");
+#endif
 #ifdef __VMS
 		filename = decc$translate_vms(argv[_PyOS_optind]);
 		if (filename == (char *)0 || filename == (char *)-1)
@@ -501,6 +510,14 @@ Py_Main(int argc, char **argv)
 		/* XXX */
 		sts = PyRun_AnyFileFlags(stdin, "<stdin>", &cf) != 0;
 
+#ifdef __ILEC400__
+/* move changes in sys.argv back to argv */ 
+    av = PySys_GetObject("argv");   
+    for (i = 1; i < PyList_Size(av); i++) {
+        PyObject *s = PyObject_Str(PyList_GetItem(av, i));
+        strcpy(argv[i + _PyOS_optind], PyString_AS_STRING(s));
+    }
+#endif
 	Py_Finalize();
 #ifdef RISCOS
 	if (Py_RISCOSWimpFlag)

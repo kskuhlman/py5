@@ -24,11 +24,23 @@
 #define BUILD 0
 #endif
 
+#ifdef __ILEC400__
+#include "as400misc.h"
+#endif
+
+
 const char *
 Py_GetBuildInfo(void)
 {
 	static char buildinfo[50];
-	PyOS_snprintf(buildinfo, sizeof(buildinfo),
-		      "#%d, %.20s, %.9s", BUILD, DATE, TIME);
-	return buildinfo;
+#ifdef __ILEC400__  
+    char *p = buildinfo + 1;
+    strFromCp37("#", buildinfo);
+    PyOS_snprintf(p, sizeof(buildinfo) - 1,
+              "%d, %.20s, %.9s", BUILD, DATE, TIME);
+#else
+    PyOS_snprintf(buildinfo, sizeof(buildinfo),
+              "#%d, %.20s, %.9s", BUILD, DATE, TIME);
+#endif
+    return buildinfo;
 }

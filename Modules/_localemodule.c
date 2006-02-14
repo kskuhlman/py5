@@ -38,7 +38,7 @@ This software comes with no warranty. Use at your own risk.
 #include <windows.h>
 #endif
 
-#ifdef RISCOS
+#if defined(RISCOS) || defined(__ILEC400__)
 char *strdup(const char *);
 #endif
 

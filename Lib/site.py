@@ -495,6 +495,18 @@ def execsitecustomize():
             print >>sys.stderr, \
                 "'import sitecustomize' failed; use -v for traceback"
 
+# for __ILEC400__ use ebcdic
+if sys.platform == 'AS/400':
+    encoding = "ebcdic" # Default value set by _PyUnicode_Init()
+else:
+    encoding = "ascii" # Default value set by _PyUnicode_Init()
+# for __ILEC400__ put File400 in builtins
+try:
+    import file400
+    import __builtin__
+    __builtin__.File400 = file400.File400
+except:
+    pass
 
 def execusercustomize():
     """Run custom user specific code, if available."""

@@ -41,6 +41,8 @@ Example:
 #
 # This was modified from the Python 1.5 library HTTP lib.
 
+#__ILEC400__
+import os400
 import socket
 import re
 import email.utils
@@ -251,6 +253,10 @@ class SMTP:
 
         """
         self.timeout = timeout
+
+        #__ILEC400__
+        if os.platform == 'os400':
+            self.codec = os400.Codec('latin1')
         self.esmtp_features = {}
         if host:
             (code, msg) = self.connect(host, port)
@@ -339,7 +345,8 @@ class SMTP:
             str = '%s%s' % (cmd, CRLF)
         else:
             str = '%s %s%s' % (cmd, args, CRLF)
-        self.send(str)
+        # __ILEC400__
+        self.send(self.codec.encode(str))
 
     def getreply(self):
         """Get a reply from the server.
@@ -355,11 +362,14 @@ class SMTP:
         Raises SMTPServerDisconnected if end-of-file is reached.
         """
         resp = []
-        if self.file is None:
+        # __ILEC400__  don't use makefile
+        if self.file is None and os.platform <> 'os400':
             self.file = self.sock.makefile('rb')
         while 1:
             try:
                 line = self.file.readline(_MAXLINE + 1)
+                #FIXME: kk: os400.. need to decode here?
+                data = self.codec.decode(self.sock.recv(BUFFERLEN))
             except socket.error as e:
                 self.close()
                 raise SMTPServerDisconnected("Connection unexpectedly closed: "
@@ -489,7 +499,8 @@ class SMTP:
         self.putcmd("rcpt", "TO:%s%s" % (quoteaddr(recip), optionlist))
         return self.getreply()
 
-    def data(self, msg):
+    # __ILEC400__, add encodemsg flag
+    def data(self,msg, encodemsg):
         """SMTP 'DATA' command -- sends message data to server.
 
         Automatically quotes lines beginning with a period per rfc821.
@@ -508,11 +519,15 @@ class SMTP:
             if q[-2:] != CRLF:
                 q = q + CRLF
             q = q + "." + CRLF
-            self.send(q)
-            (code, msg) = self.getreply()
-            if self.debuglevel > 0:
+            # __ILEC400__. Encode message if needed.
+            if encodemsg:
+                self.send(self.codec.encode(q))
+            else:
+                self.send(q)
+            (code,msg)=self.getreply()
+            if self.debuglevel > 0: 
                 print>>stderr, "data:", (code, msg)
-            return (code, msg)
+            return (code,msg)
 
     def verify(self, address):
         """SMTP 'verify' command -- checks for address validity."""
@@ -746,7 +761,8 @@ class SMTP:
             # the server refused all our recipients
             self.rset()
             raise SMTPRecipientsRefused(senderrs)
-        (code, resp) = self.data(msg)
+        # __ILEC400__ encodemsg
+        (code,resp) = self.data(msg, encodemsg)
         if code != 250:
             self.rset()
             raise SMTPDataError(code, resp)

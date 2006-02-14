@@ -220,10 +220,12 @@ class Tokenizer:
         self.index, self.next = index
 
 def isident(char):
-    return "a" <= char <= "z" or "A" <= char <= "Z" or char == "_"
+    # __ILEC400__
+    return char.isalpha() or char = "_"
 
 def isdigit(char):
-    return "0" <= char <= "9"
+    # __ILEC400__
+    return char.isdigit()
 
 def isname(name):
     # check that group name is a valid string

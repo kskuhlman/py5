@@ -50,6 +50,21 @@ structEndArchive = "<4s4H2LH"
 stringEndArchive = "PK\005\006"
 sizeEndCentDir = struct.calcsize(structEndArchive)
 
+# Here are some struct module formats for reading headers
+# __ILEC400__
+#structEndArchive = "<4s4H2lH"     # 9 items, end of archive, 22 bytes
+#stringEndArchive = "PK\005\006"   # magic number for end of archive record
+#structCentralDir = "<4s4B4H3l5HLl"# 19 items, central directory, 46 bytes
+#stringCentralDir = "PK\001\002"   # magic number for central directory
+#structFileHeader = "<4s2B4H3l2H"  # 12 items, file header record, 30 bytes
+#stringFileHeader = "PK\003\004"   # magic number for file header
+structEndArchive = "<4s4H2lH"     # 9 items, end of archive, 22 bytes
+stringEndArchive = "\120\113\005\006" # magic number for end of archive record
+structCentralDir = "<4s4B4H3l5H2l"  # 19 items, central directory, 46 bytes
+stringCentralDir = "\120\113\001\002" # magic number for central directory
+structFileHeader = "<4s2B4H3l2H"  # 12 items, file header record, 30 bytes
+stringFileHeader = "\120\113\003\004"  # magic number for file header
+
 _ECD_SIGNATURE = 0
 _ECD_DISK_NUMBER = 1
 _ECD_DISK_START = 2

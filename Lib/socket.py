@@ -247,7 +247,11 @@ class _fileobject(object):
                  "_sock", "_rbufsize", "_wbufsize", "_rbuf", "_wbuf", "_wbuf_len",
                  "_close"]
 
-    def __init__(self, sock, mode='rb', bufsize=-1, close=False):
+    def __init__(self, sock, mode='rb', bufsize=-1, close=False, newline='\x0a'):
+        # __ILEC400__  New parameter newline and new slot nlc
+        # Default use '\x0a' instead of '\n' as newline
+        # but if read from AS/400 '\n' should be used
+
         self._sock = sock
         self.mode = mode # Not actually used in this version
         if bufsize < 0:

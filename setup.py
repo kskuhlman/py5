@@ -666,16 +666,17 @@ class PyBuildExt(build_ext):
             libs = ['bsd']
         exts.append( Extension('fcntl', ['fcntlmodule.c'], libraries=libs) )
         # pwd(3)
-        exts.append( Extension('pwd', ['pwdmodule.c']) )
+        if platform not in ['mvs']:
+            exts.append( Extension('pwd', ['pwdmodule.c']) )
         # grp(3)
-        exts.append( Extension('grp', ['grpmodule.c']) )
+        if platform not in ['mvs']:
+            exts.append( Extension('grp', ['grpmodule.c']) )
         # spwd, shadow passwords
         if (config_h_vars.get('HAVE_GETSPNAM', False) or
                 config_h_vars.get('HAVE_GETSPENT', False)):
             exts.append( Extension('spwd', ['spwdmodule.c']) )
         else:
             missing.append('spwd')
-
         # select(2); not on ancient System V
         exts.append( Extension('select', ['selectmodule.c']) )
 
@@ -684,7 +685,8 @@ class PyBuildExt(build_ext):
 
         # cStringIO and cPickle
         exts.append( Extension('cStringIO', ['cStringIO.c']) )
-        exts.append( Extension('cPickle', ['cPickle.c']) )
+        if platform not in ['mvs']:
+          exts.append( Extension('cPickle', ['cPickle.c']) )
 
         # Memory-mapped files (also works on Win32).
         if host_platform not in ['atheos']:
@@ -1337,7 +1339,7 @@ class PyBuildExt(build_ext):
             missing.append('gdbm')
 
         # Unix-only modules
-        if host_platform not in ['win32']:
+        if host_platform not in ['win32','mvs']:
             # Steen Lumholt's termios module
             exts.append( Extension('termios', ['termios.c']) )
             # Jeremy Hylton's rlimit interface
@@ -1367,7 +1369,8 @@ class PyBuildExt(build_ext):
             exts.append( Extension('_curses', ['_cursesmodule.c'],
                                    include_dirs = curses_incs,
                                    libraries = curses_libs) )
-        elif curses_library == 'curses' and host_platform != 'darwin':
+        elif (curses_library == 'curses' and host_platform != 'darwin'  
+              and platform != 'mvs'):
                 # OSX has an old Berkeley curses, not good enough for
                 # the _curses module.
             if (self.compiler.find_library_file(lib_dirs, 'terminfo')):

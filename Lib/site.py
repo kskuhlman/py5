@@ -1,5 +1,4 @@
 """Append module search paths for third-party packages to sys.path.
-
 ****************************************************************
 * This module is automatically imported during initialization. *
 ****************************************************************
@@ -467,7 +466,7 @@ def setencoding():
     """Set the string encoding used by the Unicode implementation.  The
     default is 'ascii', but if you're willing to experiment, you can
     change this."""
-    encoding = "ascii" # Default value set by _PyUnicode_Init()
+    encoding = "CP037" # Default value set by _PyUnicode_Init()
     if 0:
         # Enable to support locale aware default string encodings.
         import locale
@@ -478,7 +477,7 @@ def setencoding():
         # Enable to switch off string to Unicode coercion and implicit
         # Unicode to string conversion.
         encoding = "undefined"
-    if encoding != "ascii":
+    if encoding != "CP037":
         # On Non-Unicode builds this will raise an AttributeError...
         sys.setdefaultencoding(encoding) # Needs Python Unicode build !
 

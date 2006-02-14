@@ -596,6 +596,21 @@ $(DLLLIBRARY) libpython$(VERSION).dll.a: $(LIBRARY_OBJS)
 	else true; \
 	fi
 
+# This rule builds the MVS Python DLL
+libpython$(VERSION).x: $(LIBRARY_OBJS) $(LIBRARY)
+	@if test -z $(LINKFORSHARED); then \
+	  echo "********************************************" ;\
+	  echo "static generation requested => .DLL NOT BUILT" ;\
+	  echo "********************************************" ;\
+        else \
+	  echo "********************************************" ;\
+	  echo "DYNAMIC DLL building => .DLL BUILT" ;\
+	  echo "********************************************" ;\
+	  $(LINKCC) $(LINKFORSHARED) -o $(DLLLIBRARY) $(MODULE_OBJS) \
+		$(MODOBJS) $(SIGNAL_OBJS) $(PYTHON_OBJS) $(PARSER_OBJS)\
+		$(OBJECT_OBJS) Modules/getbuildinfo.o ; \
+	fi
+
 
 oldsharedmods: $(SHAREDMODS)
 
@@ -1390,9 +1405,20 @@ TAGS::
 	for i in $(SRCDIRS); do etags -a $$i/*.[ch]; done
 
 # Sanitation targets -- clean leaves libraries, executables and tags
+<<<<<<< HEAD
 # files, which clobber removes as well
 pycremoval:
+=======
+# files, which clobber removes those as well
+
+clean:
+	find . -name '*.o' -exec rm -f {} ';'
+	find . -name '*.x' -exec rm -f {} ';'
+	find . -name '*.s[ol]' -exec rm -f {} ';'
+	find . -name '*.dll' -exec rm -f {} ';'
+>>>>>>> 9a6ecfb... Apply changes from os/390 port found at: http://www.teaser.fr/~jymengant/mvspython/mvsPythonPort.html. 
 	find $(srcdir) -name '*.py[co]' -exec rm -f {} ';'
+	rm python
 
 clean: pycremoval
 	find . -name '*.[oa]' -exec rm -f {} ';'

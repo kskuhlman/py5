@@ -3319,7 +3319,23 @@ then
     ac_md_release=`echo $ac_sys_release |
 			tr -d '/ ' | sed 's/^[A-Z]\.//' | sed 's/\..*//'`
     MACHDEP="$ac_md_system$ac_md_release"
-
+#
+# check for mvs unix system familly
+#
+        echo "$as_me:$LINENO: checking is the os an IBM/MVS OE system" >&5
+echo $ECHO_N "checking is the os an IBM/MVS OE system... $ECHO_C" >&6
+# testing OS/390 this may need to be updated for zos
+	if test "$ac_sys_system" = "OS/390"
+	then
+	  echo "$as_me:$LINENO: result: yes" >&5
+echo "${ECHO_T}yes" >&6
+	  MACHDEP="mvs"
+        else
+	  echo "$as_me:$LINENO: result: no" >&5
+echo "${ECHO_T}no" >&6
+	  MACHDEP="$ac_md_system$ac_md_release"
+	fi
+# end of OS/39O test
     case $MACHDEP in
 	linux*) MACHDEP="linux2";;
 	cygwin*) MACHDEP="cygwin";;
@@ -3452,6 +3468,19 @@ $as_echo "#define _XOPEN_SOURCE 600" >>confdefs.h
 
 $as_echo "#define _XOPEN_SOURCE_EXTENDED 1" >>confdefs.h
 
+  echo "$as_me:$LINENO: checking For POSIX specificity on OS390" >&5
+echo $ECHO_N "checking For POSIX specificity on OS390... $ECHO_C" >&6
+  if test "$ac_sys_system" = "OS/390"
+  then
+    echo "$as_me:$LINENO: result: yes" >&5
+echo "${ECHO_T}yes" >&6
+    cat >>confdefs.h <<\_ACEOF
+#define _OPEN_THREADS 1
+_ACEOF
+
+    cat >>confdefs.h <<\_ACEOF
+#define _POSIX_THREADS 1
+_ACEOF
 
 
 $as_echo "#define _POSIX_C_SOURCE 200112L" >>confdefs.h
@@ -5353,6 +5382,27 @@ DLLLIBRARY=''
 LDLIBRARYDIR=''
 RUNSHARED=''
 
+# do we have requested static LINK on IBM/MVS platform
+echo "$as_me:$LINENO: checking for --with-zdll" >&5
+echo $ECHO_N "checking for --with-zdll... $ECHO_C" >&6
+
+# Check whether --with-zdll or --without-zdll was given.
+if test "${with_zdll+set}" = set; then
+  withval="$with_zdll"
+
+            ZDLL="yes"
+    	    LDLIBRARY='libpython$(VERSION).x'
+    	    DLLLIBRARY='libpython$(VERSION).dll'
+            echo "$as_me:$LINENO: result: yes" >&5
+echo "${ECHO_T}yes" >&6
+else
+   ZDLL="no"
+              echo "$as_me:$LINENO: result: no" >&5
+echo "${ECHO_T}no" >&6
+fi;
+# end of static link request for Z
+
+
 # LINKCC is the command that links the python executable -- default is $(CC).
 # If CXX is set, and if it is needed to link a main function that was
 # compiled with CXX, LINKCC is CXX instead. Always using CXX is undesirable:
@@ -5534,6 +5584,10 @@ $as_echo "#define Py_ENABLE_SHARED 1" >>confdefs.h
     AIX*)
 	LDLIBRARY='libpython$(VERSION).so'
 	RUNSHARED=LIBPATH=`pwd`${LIBPATH:+:${LIBPATH}}
+	;;
+    mvs*)
+    	LDLIBRARY='libpython$(VERSION).x'
+    	DLLLIBRARY='libpython$(VERSION).dll'
 	;;
 
   esac
@@ -6051,6 +6105,72 @@ then
     esac
 fi
 
+case $ac_sys_system in
+  OS/390*)
+    if test "$Py_DEBUG" = 'true'; then
+      OPT="-g -Wc,\"langlvl(extended)\",RENT,DLL,EXPORTALL"
+    else
+      OPT="-DNDEBUG -Wc,\"langlvl(extended)\",RENT,DLL,EXPORTALL"
+    fi
+    # provide a minimalistic linking strategy for mvs(-O blows up)
+    # check for XPLINK linker optimization availability
+    echo "$as_me:$LINENO: checking MVS version supports XPLINK optim " >&5
+echo $ECHO_N "checking MVS version supports XPLINK optim ... $ECHO_C" >&6
+    if test "${ac_cv_xplink_ok+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  ac_save_cc="$CC"
+     CC="$CC -Wc,XPLINK -Wl,XPLINK"
+     if test "$cross_compiling" = yes; then
+  ac_cv_xplink_ok=no
+else
+  cat >conftest.$ac_ext <<_ACEOF
+#line $LINENO "configure"
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+int main() { return 0; }
+_ACEOF
+rm -f conftest$ac_exeext
+if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
+  (eval $ac_link) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } && { ac_try='./conftest$ac_exeext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_xplink_ok=yes
+else
+  echo "$as_me: program exited with status $ac_status" >&5
+echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+( exit $ac_status )
+ac_cv_xplink_ok=no
+fi
+rm -f core core.* *.core gmon.out bb.out conftest$ac_exeext conftest.$ac_objext conftest.$ac_ext
+fi
+     CC="$ac_save_cc"
+fi
+
+    echo "$as_me:$LINENO: result: $ac_cv_xplink_ok" >&5
+echo "${ECHO_T}$ac_cv_xplink_ok" >&6
+    if test $ac_cv_xplink_ok = yes; then
+      OPT="$OPT,XPLINK,GONUM -Wl,XPLINK"
+      LDFLAGS="-Wc,XPLINK -Wl,XPLINK $CFLAGS"
+    fi;;
+  *)
+    if test "$Py_DEBUG" = 'true'; then
+      OPT="-g"
+    else
+      OPT="-DNDEBUG -g"
+    fi;;
+esac
 
 
 # The -arch flags for universal builds on OSX
@@ -10566,6 +10686,11 @@ then
 	# Use dynload_next.c only on 10.2 and below, which don't have native dlopen()
 	Darwin/[0156]\..*) DYNLOADFILE="dynload_next.o";;
 	atheos*) DYNLOADFILE="dynload_atheos.o";;
+        OS/390*)
+          if test $ZDLL=yes ; then
+           # only if ZDLL is requested
+            DYNLOADFILE="dynload_mvs.o"
+          fi;;
 	*)
 	# use dynload_shlib.c and dlopen() if we have it; otherwise stub
 	# out any dynamic loading
@@ -16225,7 +16350,7 @@ cat >>$CONFIG_STATUS <<_ACEOF || ac_write_fail=1
 _ACAWK
 cat >>"\$ac_tmp/subs1.awk" <<_ACAWK &&
   for (key in S) S_is_set[key] = 1
-  FS = ""
+  FS = "
 
 }
 {
@@ -16357,7 +16482,7 @@ s/'"$ac_delim"'/"\\\
 
 cat >>$CONFIG_STATUS <<_ACEOF || ac_write_fail=1
   for (key in D) D_is_set[key] = 1
-  FS = ""
+  FS = "
 }
 /^[\t ]*#[\t ]*(define|undef)[\t ]+$ac_word_re([\t (]|\$)/ {
   line = \$ 0

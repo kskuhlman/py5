@@ -674,7 +674,7 @@ PyObject *PyString_DecodeEscape(const char *s,
             goto failed;
         }
         switch (*s++) {
-        /* XXX This assumes ASCII! */
+        /* FIXME: This assumes ASCII! */
         case '\n': break;
         case '\\': *p++ = '\\'; break;
         case '\'': *p++ = '\''; break;
@@ -924,8 +924,13 @@ string_print(PyStringObject *op, FILE *fp, int flags)
             fprintf(fp, "\\n");
         else if (c == '\r')
             fprintf(fp, "\\r");
+#ifdef __MVS__ /* EBCDIC */
+        else if ( isprint(c)==0 )
+            fprintf(fp, "\\x%02x", c & 0xff);
+#else /*ASCII */
         else if (c < ' ' || c >= 0x7f)
             fprintf(fp, "\\x%02x", c & 0xff);
+#endif 
         else
             fputc(c, fp);
     }

@@ -534,6 +534,7 @@ decoding_fgets(char *s, int size, struct tok_state *tok)
         }
     }
 #ifndef PGEN
+#ifndef __MVS__ /* not applicable to EBCDIC contexts */
     /* The default encoding is ASCII, so make sure we don't have any
        non-ASCII bytes in it. */
     if (line && !tok->encoding) {
@@ -544,6 +545,7 @@ decoding_fgets(char *s, int size, struct tok_state *tok)
                 break;
             }
     }
+#endif
     if (badchar) {
         char buf[500];
         /* Need to add 1 to the line number, since this line

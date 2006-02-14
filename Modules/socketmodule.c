@@ -95,6 +95,10 @@ Local naming conventions:
 # pragma weak inet_aton
 #endif
 
+#ifdef __MVS__
+#define _OE_SOCKETS
+#endif
+
 #include "Python.h"
 #include "structmember.h"
 #include "timefuncs.h"

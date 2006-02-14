@@ -12,7 +12,10 @@ for manipulation of the pathname component of URLs.
 
 import os
 import sys
-import stat
+if sys.platform == 'mvs':
+  import statmvs as stat
+else: 
+  import stat
 import genericpath
 import warnings
 from genericpath import *

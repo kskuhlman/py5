@@ -194,10 +194,14 @@ do_PyThread_exit_thread(int no_cleanup)
 {
 	dprintf(("PyThread_exit_thread called\n"));
 	if (!initialized) {
+#ifdef __ILEC400__
+        exit(0);
+#else
 		if (no_cleanup)
 			_exit(0);
 		else
 			exit(0);
+#endif
 	}
 }
 
@@ -219,10 +223,14 @@ do_PyThread_exit_prog(int status, int no_cleanup)
 {
 	dprintf(("PyThread_exit_prog(%d) called\n", status));
 	if (!initialized)
+#ifdef __ILEC400__
+        exit(status);
+#else
 		if (no_cleanup)
 			_exit(status);
 		else
 			exit(status);
+#endif
 }
 
 void 

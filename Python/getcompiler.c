@@ -21,8 +21,20 @@
 
 #endif /* !COMPILER */
 
+#ifdef __ILEC400__
+#include "as400misc.h"
+static char compiler[7] = "";
+#endif
+
 const char *
 Py_GetCompiler(void)
 {
-	return COMPILER;
+#ifdef __ILEC400__
+    if (strlen(compiler) == 0) {
+        strFromCp37("[ILEC]", compiler);
+    }
+    return compiler;
+#else
+    return COMPILER;
+#endif
 }

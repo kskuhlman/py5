@@ -16,6 +16,12 @@
 #include <fcntl.h>
 #endif
 
+#ifdef __ILEC400__
+#include <sys/types.h> 
+#include <dirent.h>
+#include "as400misc.h"
+#endif
+
 extern time_t PyOS_GetLastModificationTime(char *, FILE *);
 						/* In getmtime.c */
 
@@ -1062,6 +1068,10 @@ find_module(char *fullname, char *subname, PyObject *path, char *buf,
 	static struct filedescr fd_frozen = {"", "", PY_FROZEN};
 	static struct filedescr fd_builtin = {"", "", C_BUILTIN};
 	static struct filedescr fd_package = {"", "", PKG_DIRECTORY};
+#ifdef __ILEC400__   
+    static struct filedescr fd_cextension = {"", "", C_EXTENSION};
+    int actmark;
+#endif
 	char name[MAXPATHLEN+1];
 #if defined(PYOS_OS2)
 	size_t saved_len;
@@ -1143,6 +1153,14 @@ find_module(char *fullname, char *subname, PyObject *path, char *buf,
 			return &fd_frozen;
 		}
 
+#ifdef __ILEC400__
+        /* check if serviceprogram is found */
+        actmark = getSrvpgm(name, Py_GetProgramFullPath());
+        if (actmark > 0) {
+            strcpy(buf, name);
+            return &fd_cextension;
+        }
+#endif
 #ifdef MS_COREDLL
 		fp = PyWin_FindRegisteredModule(name, &fdp, buf, buflen);
 		if (fp != NULL) {
@@ -1451,7 +1469,7 @@ case_ok(char *buf, int len, int namelen, char *name)
 	return strncmp(ffblk.ff_name, name, namelen) == 0;
 
 /* new-fangled macintosh (macosx) */
-#elif defined(__MACH__) && defined(__APPLE__) && defined(HAVE_DIRENT_H)
+#elif defined(__ILEC400__) || (defined(__MACH__) && defined(__APPLE__)) && defined(HAVE_DIRENT_H)
 	DIR *dirp;
 	struct dirent *dp;
 	char dirname[MAXPATHLEN + 1];

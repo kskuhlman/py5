@@ -5,6 +5,9 @@
 
 #include <ctype.h>
 
+#ifdef __ILEC400__
+#include "as400misc.h"
+#endif
 
 int PyArg_Parse(PyObject *, char *, ...);
 int PyArg_ParseTuple(PyObject *, char *, ...);
@@ -166,7 +169,11 @@ vgetargs1(PyObject *args, char *format, va_list *p_va, int compat)
 			if (level == 0) {
 				if (c == 'O')
 					max++;
+#ifdef __ILEC400__
+				else if (isalpha37(c)) {
+#else
 				else if (isalpha(c)) {
+#endif
 					if (c != 'e') /* skip encoded */
 						max++;
 				} else if (c == '|')
@@ -255,7 +262,11 @@ vgetargs1(PyObject *args, char *format, va_list *p_va, int compat)
 		}
 	}
 
+#ifdef __ILEC400__
+	if (*format != '\0' && !isalpha37((int)(*format)) &&
+#else
 	if (*format != '\0' && !isalpha((int)(*format)) &&
+#endif
 	    *format != '(' &&
 	    *format != '|' && *format != ':' && *format != ';') {
 		PyErr_Format(PyExc_SystemError,
@@ -346,7 +357,11 @@ converttuple(PyObject *arg, char **p_format, va_list *p_va, int *levels,
 		}
 		else if (c == ':' || c == ';' || c == '\0')
 			break;
+#ifdef __ILEC400__
+		else if (level == 0 && isalpha37(c))
+#else
 		else if (level == 0 && isalpha(c))
+#endif
 			n++;
 	}
 	
@@ -1220,7 +1235,11 @@ vgetargskeywords(PyObject *args, PyObject *keywords, char *format,
 	min = -1;
 	max = 0;
 	while ((i = *format++) != '\0') {
+#ifdef __ILEC400__
+		if (isalpha37(i) && i != 'e') {
+#else
 		if (isalpha(i) && i != 'e') {
+#endif
 			max++;
 			if (*p == NULL) {
 				PyErr_SetString(PyExc_RuntimeError,

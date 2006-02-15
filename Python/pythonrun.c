@@ -27,6 +27,10 @@
 #include "malloc.h" /* for alloca */
 #endif
 
+#ifdef __ILEC400__
+#include <qusrjobi.h>
+#endif
+
 #ifdef HAVE_LANGINFO_H
 #include <locale.h>
 #include <langinfo.h>

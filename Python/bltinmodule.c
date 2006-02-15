@@ -545,10 +545,18 @@ builtin_compile(PyObject *self, PyObject *args, PyObject *kwds)
     }
 #ifdef Py_USING_UNICODE
     else if (PyUnicode_Check(cmd)) {
+#ifdef Py_USING_UNICODE
+	if (PyUnicode_Check(cmd)) {
+#ifdef __ILEC400__
+        tmp = PyUnicode_AsEbcdicString(cmd);
+#else
         tmp = PyUnicode_AsUTF8String(cmd);
+#endif
         if (tmp == NULL)
             return NULL;
+#ifndef __ILEC400__
         cf.cf_flags |= PyCF_SOURCE_IS_UTF8;
+#endif
         str = PyString_AS_STRING(tmp);
         length = PyString_GET_SIZE(tmp);
     }
@@ -689,11 +697,17 @@ builtin_eval(PyObject *self, PyObject *args)
 
 #ifdef Py_USING_UNICODE
     if (PyUnicode_Check(cmd)) {
+#ifdef __ILEC400__
+        tmp = PyUnicode_AsEbcdicString(cmd);
+#else
         tmp = PyUnicode_AsUTF8String(cmd);
+#endif
         if (tmp == NULL)
             return NULL;
         cmd = tmp;
+#ifndef __ILEC400__
         cf.cf_flags |= PyCF_SOURCE_IS_UTF8;
+#endif
     }
 #endif
     if (PyString_AsStringAndSize(cmd, &str, NULL)) {

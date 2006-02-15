@@ -5113,11 +5113,17 @@ exec_statement(PyFrameObject *f, PyObject *prog, PyObject *globals,
         cf.cf_flags = 0;
 #ifdef Py_USING_UNICODE
         if (PyUnicode_Check(prog)) {
+#ifdef __ILEC400__
+            tmp = PyUnicode_AsEbcdicString(prog);
+#else
             tmp = PyUnicode_AsUTF8String(prog);
+#endif
             if (tmp == NULL)
                 return -1;
             prog = tmp;
+#ifdef __ILEC400__
             cf.cf_flags |= PyCF_SOURCE_IS_UTF8;
+#endif
         }
 #endif
         if (PyString_AsStringAndSize(prog, &str, NULL))

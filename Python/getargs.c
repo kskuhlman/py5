@@ -9,6 +9,10 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#ifdef __ILEC400__
+#include "as400misc.h"
+#endif
+
 int PyArg_Parse(PyObject *, const char *, ...);
 int PyArg_ParseTuple(PyObject *, const char *, ...);
 int PyArg_VaParse(PyObject *, const char *, va_list);
@@ -261,7 +265,12 @@ vgetargs1(PyObject *args, const char *format, va_list *p_va, int flags)
             if (level == 0) {
                 if (c == 'O')
                     max++;
+#ifdef __ILEC400__
+/* FIXME: KK: Py_CHARMASK is new between 2.4 and 2.7.  Still ok here? */
+                else if (isalpha37(Py_CHARMASK(c))) {
+#else
                 else if (isalpha(Py_CHARMASK(c))) {
+#endif
                     if (c != 'e') /* skip encoded */
                         max++;
                 } else if (c == '|')
@@ -351,7 +360,12 @@ vgetargs1(PyObject *args, const char *format, va_list *p_va, int flags)
         }
     }
 
+#ifdef __ILEC400__
+/*FIXME: Py_CHARMASK is new between 2.4 and 2.7.  Still OK? */
+    if (*format != '\0' && !isalpha37(Py_CHARMASK(*format)) &&
+#else
     if (*format != '\0' && !isalpha(Py_CHARMASK(*format)) &&
+#endif
         *format != '(' &&
         *format != '|' && *format != ':' && *format != ';') {
         PyErr_Format(PyExc_SystemError,
@@ -444,7 +458,11 @@ converttuple(PyObject *arg, const char **p_format, va_list *p_va, int flags,
         }
         else if (c == ':' || c == ';' || c == '\0')
             break;
+#ifdef __ILEC400__
+        else if (level == 0 && isalpha37(Py_CHARMASK(c)))
+#else
         else if (level == 0 && isalpha(Py_CHARMASK(c)))
+#endif
             n++;
     }
 

@@ -13,6 +13,10 @@
 #include <unixlib.h>
 #endif
 
+#ifdef __ILEC400__
+extern char * strdup(const char *str);
+#endif
+
 extern int Py_DebugFlag;
 
 grammar *

@@ -775,11 +775,13 @@ PyLong_FromVoidPtr(void *p)
     return PyInt_FromLong((long)p);
 #else
 
+#ifndef __ILEC400__
 #ifndef HAVE_LONG_LONG
 #   error "PyLong_FromVoidPtr: sizeof(void*) > sizeof(long), but no long long"
 #endif
 #if SIZEOF_LONG_LONG < SIZEOF_VOID_P
 #   error "PyLong_FromVoidPtr: sizeof(PY_LONG_LONG) < sizeof(void*)"
+#endif
 #endif
     /* optimize null pointers */
     if (p == NULL)
@@ -809,11 +811,13 @@ PyLong_AsVoidPtr(PyObject *vv)
         x = PyLong_AsUnsignedLong(vv);
 #else
 
+#ifndef __ILEC400__
 #ifndef HAVE_LONG_LONG
 #   error "PyLong_AsVoidPtr: sizeof(void*) > sizeof(long), but no long long"
 #endif
 #if SIZEOF_LONG_LONG < SIZEOF_VOID_P
 #   error "PyLong_AsVoidPtr: sizeof(PY_LONG_LONG) < sizeof(void*)"
+#endif
 #endif
     PY_LONG_LONG x;
 

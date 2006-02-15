@@ -154,9 +154,14 @@ static int running_on_valgrind = -1;
  *
  * You shouldn't change this unless you know what you are doing.
  */
+#ifdef __ILEC400__
+#define ALIGNMENT		16		/* must be 2^N */
+#define ALIGNMENT_SHIFT		4
+#else
 #define ALIGNMENT               8               /* must be 2^N */
 #define ALIGNMENT_SHIFT         3
 #define ALIGNMENT_MASK          (ALIGNMENT - 1)
+#endif
 
 /* Return the number of bytes in size class I, as a uint. */
 #define INDEX2SIZE(I) (((uint)(I) + 1) << ALIGNMENT_SHIFT)

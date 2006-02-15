@@ -7,6 +7,9 @@
 #else
 #include <sys/types.h>          /* For size_t */
 #endif
+#ifdef __ILEC400__
+#include "as400misc.h"
+#endif
 
 /* Ensure ob_item has room for at least newsize elements, and set
  * ob_size to newsize.  If newsize > ob_size on entry, the content
@@ -323,13 +326,21 @@ list_print(PyListObject *op, FILE *fp, int flags)
     int rc;
     Py_ssize_t i;
     PyObject *item;
+#ifdef __ILEC400__
+    char cbuf[6];
+    char *buf = cbuf;
+#endif
 
     rc = Py_ReprEnter((PyObject*)op);
     if (rc != 0) {
         if (rc < 0)
             return rc;
         Py_BEGIN_ALLOW_THREADS
+#ifdef __ILEC400__
+        fprintf(fp, strFromCp37("[...]", buf));
+#else
         fprintf(fp, "[...]");
+#endif
         Py_END_ALLOW_THREADS
         return 0;
     }
@@ -364,6 +375,10 @@ list_repr(PyListObject *v)
     Py_ssize_t i;
     PyObject *s, *temp;
     PyObject *pieces = NULL, *result = NULL;
+#ifdef __ILEC400__
+    char cbuf[6];
+    char *buf = cbuf;
+#endif
 
     i = Py_ReprEnter((PyObject*)v);
     if (i != 0) {
@@ -371,7 +386,11 @@ list_repr(PyListObject *v)
     }
 
     if (Py_SIZE(v) == 0) {
+#ifdef __ILEC400__
+        result = PyString_FromString(strFromCp37("[]", buf));
+#else
         result = PyString_FromString("[]");
+#endif
         goto Done;
     }
 
@@ -394,7 +413,11 @@ list_repr(PyListObject *v)
 
     /* Add "[]" decorations to the first and last items. */
     assert(PyList_GET_SIZE(pieces) > 0);
+#ifdef __ILEC400__
+    s = PyString_FromString(strFromCp37("[", buf));
+#else
     s = PyString_FromString("[");
+#endif
     if (s == NULL)
         goto Done;
     temp = PyList_GET_ITEM(pieces, 0);
@@ -403,7 +426,11 @@ list_repr(PyListObject *v)
     if (s == NULL)
         goto Done;
 
+#ifdef __ILEC400__
+    s = PyString_FromString(strFromCp37("]", buf));
+#else
     s = PyString_FromString("]");
+#endif
     if (s == NULL)
         goto Done;
     temp = PyList_GET_ITEM(pieces, PyList_GET_SIZE(pieces) - 1);
@@ -413,7 +440,11 @@ list_repr(PyListObject *v)
         goto Done;
 
     /* Paste them all together with ", " between. */
+#ifdef __ILEC400__
+    s = PyString_FromString(strFromCp37(", ", buf));
+#else
     s = PyString_FromString(", ");
+#endif
     if (s == NULL)
         goto Done;
     result = _PyString_Join(s, pieces);

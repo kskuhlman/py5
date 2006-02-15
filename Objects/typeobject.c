@@ -6571,12 +6571,23 @@ add_operators(PyTypeObject *type)
     PyObject *descr;
     void **ptr;
 
+#ifdef __ILEC400__
+ /* because of a bug */
+    void *pptr;
+#endif
+
     init_slotdefs();
     for (p = slotdefs; p->name; p++) {
         if (p->wrapper == NULL)
             continue;
         ptr = slotptr(type, p->offset);
+#ifdef __ILEC400__
+ /* because of a bug */
+        if (ptr) pptr = *ptr;
+        if (!ptr || !pptr)
+#else
         if (!ptr || !*ptr)
+#endif
             continue;
         if (PyDict_GetItem(dict, p->name_strobj))
             continue;

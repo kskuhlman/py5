@@ -82,7 +82,7 @@ def crt_SrvPy(lib, tgtRls):
              crtSrvPgm(srvPgm="Python", module=modules, tgtRls=tgtRls)
 
 # From crt_module.clp:
-dfe crt_module(lib, opt, inline, dbg, tgt):
+def crt_module(lib, opt, inline, dbg, tgt):
              CHGENVVAR(ENVVAR="INCLUDE", VALUE ='/source/python2.3/as400:' +
                        '/source/python2.3/modules:/source/python2.3:' +
                        '/source/python2.3/include:/qibm/proddata/ilec:' +
@@ -143,12 +143,7 @@ dfe crt_module(lib, opt, inline, dbg, tgt):
 
 # from crt_object.clp:
 ### TODO: Fix this
-             PGM        PARM(&LIB &OPT &INLINE &DBG &TGT)
-             DCL        VAR(&LIB) TYPE(*CHAR) LEN(10)
-             DCL        VAR(&OPT) TYPE(*CHAR) LEN(2)
-             DCL        VAR(&INLINE) TYPE(*CHAR) LEN(4)
-             DCL        VAR(&DBG) TYPE(*CHAR) LEN(10)
-             DCL        VAR(&TGT) TYPE(*CHAR) LEN(10)
+def crt_object(lib, opt, inline, dbg, tgt):
              CHGENVVAR  ENVVAR(INCLUDE) +
                           VALUE('/source/python2.3/as400:/source/pyth+
                           on2.3/objects:/source/python2.3:/source/pyt+
@@ -159,484 +154,173 @@ dfe crt_module(lib, opt, inline, dbg, tgt):
                         INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
                         SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
                         SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/ABSTRACT.C')
-             CRTCMOD    MODULE(&LIB/BOOLOBJECT) +
-                          SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/BOOLOBJE+
-                          CT.C') OPTIMIZE(&OPT) INLINE(&INLINE +
-                          *AUTO) DBGVIEW(&DBG) SYSIFCOPT(*IFSIO) +
-                          LOCALETYPE(*LOCALEUCS2) TGTRLS(&TGT)
-             CRTCMOD    MODULE(&LIB/BUFFEROBJE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/BUFFEROBJECT.C')
-             CRTCMOD    MODULE(&LIB/CLASSOBJEC) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/CLASSOBJECT.C')
-             CRTCMOD    MODULE(&LIB/COBJECT) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/COBJECT.C')
-             CRTCMOD    MODULE(&LIB/COMPLEXOBJ) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/COMPLEXOBJECT.C')
-             CRTCMOD    MODULE(&LIB/DICTOBJECT) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/DICTOBJECT.C')
-             CRTCMOD    MODULE(&LIB/ENUMOBJECT) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/ENUMOBJECT.C')
-             CRTCMOD    MODULE(&LIB/FILEOBJECT) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/FILEOBJECT.C')
-             CRTCMOD    MODULE(&LIB/FLOATOBJEC) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/FLOATOBJECT.C')
-             CRTCMOD    MODULE(&LIB/FRAMEOBJEC) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/FRAMEOBJECT.C')
-             CRTCMOD    MODULE(&LIB/FUNCOBJECT) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/FUNCOBJECT.C')
-             CRTCMOD    MODULE(&LIB/INTOBJECT) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/INTOBJECT.C')
-             CRTCMOD    MODULE(&LIB/LISTOBJECT) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/LISTOBJECT.C')
-             CRTCMOD    MODULE(&LIB/LONGOBJECT) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/LONGOBJECT.C')
-             CRTCMOD    MODULE(&LIB/METHODOBJE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/METHODOBJECT.C')
-             CRTCMOD    MODULE(&LIB/MODULEOBJE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/MODULEOBJECT.C')
-             CRTCMOD    MODULE(&LIB/OBJECT) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/OBJECT.C')
-             CRTCMOD    MODULE(&LIB/RANGEOBJE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/RANGEOBJECT.C')
-             CRTCMOD    MODULE(&LIB/SLICEOBJE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/SLICEOBJECT.C')
-             CRTCMOD    MODULE(&LIB/STRINGOBJE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/STRINGOBJECT.C')
-             CRTCMOD    MODULE(&LIB/TUPLEOBJE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/TUPLEOBJECT.C')
-             CRTCMOD    MODULE(&LIB/TYPEOBJE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/TYPEOBJECT.C')
-             CRTCMOD    MODULE(&LIB/UNICODECTY) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/UNICODECTYPE.C')
-             CRTCMOD    MODULE(&LIB/UNICODEOBJ) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/UNICODEOBJECT.C')
-             CRTCMOD    MODULE(&LIB/CELLOBJECT) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/CELLOBJECT.C')
-             CRTCMOD    MODULE(&LIB/WEAKREFOBJ) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/WEAKREFOBJECT.C')
-             CRTCMOD    MODULE(&LIB/STRUCTSEQ) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/STRUCTSEQ.C')
-             CRTCMOD    MODULE(&LIB/DESCROBJEC) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/DESCROBJECT.C')
-             CRTCMOD    MODULE(&LIB/ITEROBJECT) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/ITEROBJECT.C')
-             CRTCMOD    MODULE(&LIB/OBMALLOC) +
-                          SRCSTMF('/SOURCE/PYTHON2.3/OBJECTS/OBMALLOC+
-                          .C') OPTIMIZE(&OPT) INLINE(&INLINE *AUTO) +
-                          DBGVIEW(&DBG) SYSIFCOPT(*IFSIO) +
-                          LOCALETYPE(*LOCALEUCS2) TGTRLS(&TGT)
-             ENDPGM
+             (("BOOLOBJECT", '/SOURCE/PYTHON2.3/OBJECTS/BOOLOBJECT.C'),
+             ("BUFFEROBJE", '/SOURCE/PYTHON2.3/OBJECTS/BUFFEROBJECT.C'),
+             ("CLASSOBJEC", '/SOURCE/PYTHON2.3/OBJECTS/CLASSOBJECT.C'),
+             ("COBJECT", '/SOURCE/PYTHON2.3/OBJECTS/COBJECT.C'),
+             ("COMPLEXOBJ", '/SOURCE/PYTHON2.3/OBJECTS/COMPLEXOBJECT.C'),
+             ("DICTOBJECT", '/SOURCE/PYTHON2.3/OBJECTS/DICTOBJECT.C'),
+             ("ENUMOBJECT", '/SOURCE/PYTHON2.3/OBJECTS/ENUMOBJECT.C'),
+             ("FILEOBJECT", '/SOURCE/PYTHON2.3/OBJECTS/FILEOBJECT.C'),
+             ("FLOATOBJEC", '/SOURCE/PYTHON2.3/OBJECTS/FLOATOBJECT.C'),
+             ("FRAMEOBJEC", '/SOURCE/PYTHON2.3/OBJECTS/FRAMEOBJECT.C'),
+             ("FUNCOBJECT", '/SOURCE/PYTHON2.3/OBJECTS/FUNCOBJECT.C'),
+             ("INTOBJECT", '/SOURCE/PYTHON2.3/OBJECTS/INTOBJECT.C'),
+             ("LISTOBJECT", '/SOURCE/PYTHON2.3/OBJECTS/LISTOBJECT.C'),
+             ("LONGOBJECT", '/SOURCE/PYTHON2.3/OBJECTS/LONGOBJECT.C'),
+             ("METHODOBJE", '/SOURCE/PYTHON2.3/OBJECTS/METHODOBJECT.C'),
+             ("MODULEOBJE", '/SOURCE/PYTHON2.3/OBJECTS/MODULEOBJECT.C'),
+             ("OBJECT", '/SOURCE/PYTHON2.3/OBJECTS/OBJECT.C'),
+             ("RANGEOBJE", '/SOURCE/PYTHON2.3/OBJECTS/RANGEOBJECT.C'),
+             ("SLICEOBJE", '/SOURCE/PYTHON2.3/OBJECTS/SLICEOBJECT.C'),
+             ("STRINGOBJE", '/SOURCE/PYTHON2.3/OBJECTS/STRINGOBJECT.C'),
+             ("TUPLEOBJE", '/SOURCE/PYTHON2.3/OBJECTS/TUPLEOBJECT.C'),
+             ("TYPEOBJE", '/SOURCE/PYTHON2.3/OBJECTS/TYPEOBJECT.C'),
+             ("UNICODECT", '/SOURCE/PYTHON2.3/OBJECTS/UNICODECTYPE.C'),
+             ("UNICODEOBJ", '/SOURCE/PYTHON2.3/OBJECTS/UNICODEOBJECT.C'),
+             ("CELLOBJECT", '/SOURCE/PYTHON2.3/OBJECTS/CELLOBJECT.C'),
+             ("WEAKREFOBJ", '/SOURCE/PYTHON2.3/OBJECTS/WEAKREFOBJECT.C'),
+             ("STRUCTSEQ", '/SOURCE/PYTHON2.3/OBJECTS/STRUCTSEQ.C'),
+             ("DESCROBJEC", '/SOURCE/PYTHON2.3/OBJECTS/DESCROBJECT.C'),
+             ("ITEROBJECT", '/SOURCE/PYTHON2.3/OBJECTS/ITEROBJECT.C'),
+             ("OBMALLOC", '/SOURCE/PYTHON2.3/OBJECTS/OBMALLOC.C')
+             )
 
 #From crt_parser.clp:
 ### TODO: Fix this
-            PGM        PARM(&LIB &OPT &INLINE &DBG &TGT)
-             DCL        VAR(&LIB) TYPE(*CHAR) LEN(10)
-             DCL        VAR(&OPT) TYPE(*CHAR) LEN(2)
-             DCL        VAR(&INLINE) TYPE(*CHAR) LEN(4)
-             DCL        VAR(&DBG) TYPE(*CHAR) LEN(10)
-             DCL        VAR(&TGT) TYPE(*CHAR) LEN(10)
+def crt_CModule(module, path, lib, opt, inline, dbg, tgt):
+             os.cmd("""CRTCMOD MODULE(%s/%s) OPTIMIZE(%s) INLINE(%s *AUTO)
+                DBGVIEW(%s) TGTRLS(%s) SYSIFCOPT(*IFSIO)
+                LOCALETYPE(*LOCALEUCS2) SRCSTMF('%s')""" % (lib, module, opt,
+                          inline, dbg, tgt, path)
+
+def crt_parser(lib, opt, inline, dbg, tgt):
              CHGENVVAR  ENVVAR(INCLUDE) +
                           VALUE('/source/python2.3/as400:/source/pyth+
                           on2.3/parser:/source/python2.3:/source/pyth+
                           on2.3/include:/qibm/proddata/ilec:/qibm/pro+
                           ddata/ilec/include:/qibm/include:/qibm/incl+
                           ude/sys')
-             CRTCMOD    MODULE(&LIB/ACCELER) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PARSER/ACCELER.C')
-             CRTCMOD    MODULE(&LIB/BITSET) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PARSER/BITSET.C')
-             CRTCMOD    MODULE(&LIB/FIRSTSETS) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PARSER/FIRSTSETS.C')
-             CRTCMOD    MODULE(&LIB/GRAMMAR) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PARSER/GRAMMAR.C')
-             CRTCMOD    MODULE(&LIB/GRAMMAR1) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PARSER/GRAMMAR1.C')
-             CRTCMOD    MODULE(&LIB/LISTNODE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PARSER/LISTNODE.C')
-             CRTCMOD    MODULE(&LIB/METAGRAMMA) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PARSER/METAGRAMMAR.C')
-             CRTCMOD    MODULE(&LIB/MYREADLINE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PARSER/MYREADLINE.C')
-             CRTCMOD    MODULE(&LIB/NODE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PARSER/NODE.C')
-             CRTCMOD    MODULE(&LIB/PARSER) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PARSER/PARSER.C')
-             CRTCMOD    MODULE(&LIB/PARSETOK) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PARSER/PARSETOK.C')
-             CRTCMOD    MODULE(&LIB/PGEN) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PARSER/PGEN.C')
-             CRTCMOD    MODULE(&LIB/PRINTGRAMM) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PARSER/PRINTGRAMMAR.C')
-             CRTCMOD    MODULE(&LIB/TOKENIZER) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PARSER/TOKENIZER.C')
-             ENDPGM
+
+             ("BITSET", '/SOURCE/PYTHON2.3/PARSER/BITSET.C')
+             ("FIRSTSETS", '/SOURCE/PYTHON2.3/PARSER/FIRSTSETS.C')
+             ("GRAMMAR", '/SOURCE/PYTHON2.3/PARSER/GRAMMAR.C')
+             ("GRAMMAR1", '/SOURCE/PYTHON2.3/PARSER/GRAMMAR1.C')
+             ("LISTNODE", '/SOURCE/PYTHON2.3/PARSER/LISTNODE.C')
+             ("METAGRAMMA", '/SOURCE/PYTHON2.3/PARSER/METAGRAMMAR.C')
+             ("MYREADLINE", '/SOURCE/PYTHON2.3/PARSER/MYREADLINE.C')
+             ("NODE", '/SOURCE/PYTHON2.3/PARSER/NODE.C')
+             ("PARSER", '/SOURCE/PYTHON2.3/PARSER/PARSER.C')
+             ("PARSETOK", '/SOURCE/PYTHON2.3/PARSER/PARSETOK.C')
+             ("PGEN", '/SOURCE/PYTHON2.3/PARSER/PGEN.C')
+             ("PRINTGRAMM", '/SOURCE/PYTHON2.3/PARSER/PRINTGRAMMAR.C')
+             ("TOKENIZER", '/SOURCE/PYTHON2.3/PARSER/TOKENIZER.C')
+
+def crtPgm(lib, pgm, srvPgm, tgtRls):
+             sys.callstats("""CRTPGM PGM(%s/%s) BNDSRVPGM(%s/%s) +
+                          ALWLIBUPD(*YES) TGTRLS(%s)""" % (lib, pgm, lib,
+                                                    srvPgm, tgtRls))
+
+def crtCmd(lib, cmd, pgm, text=None, thdSafe="*NO"):
+             sys.cmd("""CRTCMD CMD(%s/%s) PGM(%s/%s) SRCFILE(%s/QCMDSRC)
+                     THDSAFE(%s) TEXT(%s)""" % (lib, cmd, lib, pgm, pySrcLib,
+                                                thdSafe)
+
 # From crt_pgm.clp:
-### TODO: Fix this
-            PGM        PARM(&LIB &TGTRLS)
-             DCL        VAR(&LIB) TYPE(*CHAR) LEN(10)
-             DCL        VAR(&TGTRLS) TYPE(*CHAR) LEN(10)
+def crt_pgm(lib, tgtRls)
+             crt_srvpy(lib, tgtRls)
 
-             CALL PYTHON23/CRT_SRVPY PARM(&LIB &TGTRLS)
+#             CRTSRVPGM  SRVPGM(&LIB/ARRAY) MODULE(&LIB/ARRAYMODUL) +
+#                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
+#                          TGTRLS(&TGTRLS)
+              #(SrvPgm, Module)
+             (("BINASCII", "BINASCII"),
+             ("CMATH", "CMATHMODUL"),
+             ("CPICKLE", "CPICKLE"),
+             ("CSTRINGIO", "CSTRINGIO"),
+             ("ZDATE", "ZDATE"),
+             ("DATETIME", "DATETIMEMO"),
+             ("ERRNO", "ERRNOMODUL"),
+             ("FCNTL", "FCNTLMODUL"),
+             ("IMAGEOP", "IMAGEOP"),
+             ("MATH", "MATHMODULE"),
+             ("MD5", "MD5*"),
+             ("FILE400", "FILE400MOD"),
+             ("ZOS400", "ZOS400"),
+             ("PARSER", "PARSERMODU"),
+             ("PURE", "PUREMODULE"),
+             ("SELECT", "SELECTMODU"),
+             ("SGML", "SGMLMODULE"),
+             ("ZSOCKET", "SOCKETMODU"),
+             ("ZSRE", "SRE"),
+             ("STROP", "STROPMODUL"),
+             ("STRUCT", "STRUCTMODU"),
+             ("THREAD", "THREADMODU"),
+             ("TIME", "TIMEMODULE"),
+             ("TIMING", "TIMINGMODU"),
+             ("UNICODEDAT", "UNICODEDAT"),
+             ("ZLIB", ("ZLIBMODULE &LIB/Z_*")),
+             ("XREADLINES", "XREADLINES"),
+             ("SHA", "SHAMODULE"),
+             ("ZSYMTABLE", "SYMTABLEMO"),
+             ("TESTCAPIMO", "TESTCAPIMO"),
+             ("ZWEAKREF", "WEAKREF"),
+             ("ZHOTSHOT", "HOTSHOT"),
+             ("ITERTOOLS", "ITERTOOLSM"),
+             ("ZCSV", "CSV"),
+             ("ZRANDOM", "RANDOM"),
+             ("ZDB", "ZDB")
 
-             CRTSRVPGM  SRVPGM(&LIB/ARRAY) MODULE(&LIB/ARRAYMODUL) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/BINASCII) MODULE(&LIB/BINASCII) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/CMATH) MODULE(&LIB/CMATHMODUL) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/CPICKLE) MODULE(&LIB/CPICKLE) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/CSTRINGIO) +
-                          MODULE(&LIB/CSTRINGIO) EXPORT(*ALL) +
-                          BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/ZDATE) MODULE(&LIB/ZDATE) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/DATETIME) MODULE(&LIB/DATETIMEMO) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/ERRNO) MODULE(&LIB/ERRNOMODUL) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/FCNTL) MODULE(&LIB/FCNTLMODUL) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/IMAGEOP) MODULE(&LIB/IMAGEOP) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/MATH) MODULE(&LIB/MATHMODULE) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/MD5) MODULE(&LIB/MD5*) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/FILE400) MODULE(&LIB/FILE400MOD) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/ZOS400) MODULE(&LIB/ZOS400) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/PARSER) MODULE(&LIB/PARSERMODU) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/PURE) MODULE(&LIB/PUREMODULE) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/SELECT) MODULE(&LIB/SELECTMODU) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/SGML) MODULE(&LIB/SGMLMODULE) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/ZSOCKET) MODULE(&LIB/SOCKETMODU) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/ZSRE) MODULE(&LIB/SRE) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/STROP) MODULE(&LIB/STROPMODUL) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/STRUCT) MODULE(&LIB/STRUCTMODU) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/THREAD) MODULE(&LIB/THREADMODU) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/TIME) MODULE(&LIB/TIMEMODULE) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/TIMING) MODULE(&LIB/TIMINGMODU) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/UNICODEDAT) +
-                          MODULE(&LIB/UNICODEDAT) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/ZLIB) MODULE(&LIB/ZLIBMODULE +
-                          &LIB/Z_*) EXPORT(*ALL) +
-                          BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/XREADLINES) +
-                          MODULE(&LIB/XREADLINES) EXPORT(*ALL) +
-                          BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/SHA) +
-                          MODULE(&LIB/SHAMODULE) EXPORT(*ALL) +
-                          BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/ZSYMTABLE) +
-                          MODULE(&LIB/SYMTABLEMO) EXPORT(*ALL) +
-                          BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/TESTCAPIMO) +
-                          MODULE(&LIB/TESTCAPIMO) EXPORT(*ALL) +
-                          BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/ZWEAKREF) +
-                          MODULE(&LIB/WEAKREF) EXPORT(*ALL) +
-                          BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/ZHOTSHOT) +
-                          MODULE(&LIB/HOTSHOT) EXPORT(*ALL) +
-                          BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/ITERTOOLS) +
-                          MODULE(&LIB/ITERTOOLSM) EXPORT(*ALL) +
-                          BNDSRVPGM(&LIB/PYTHON) TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/ZCSV) MODULE(&LIB/CSV) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/ZRANDOM) MODULE(&LIB/RANDOM) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
-             CRTSRVPGM  SRVPGM(&LIB/ZDB) MODULE(&LIB/ZDB) +
-                          EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +
-                          TGTRLS(&TGTRLS)
+             crtPgm (lib, "python", "python", tgtRls)
+             crtPgm (lib, "pythoncmd", "python", tgtRls)
 
-             CRTPGM     PGM(&LIB/PYTHON) BNDSRVPGM(&LIB/PYTHON) +
-                          ALWLIBUPD(*YES) TGTRLS(&TGTRLS)
-             CRTPGM     PGM(&LIB/PYTHONCMD) BNDSRVPGM(&LIB/PYTHON) +
-                          ALWLIBUPD(*YES) TGTRLS(&TGTRLS)
-             CRTCMD     CMD(&LIB/PYTHON) PGM(&LIB/PYTHONCMD) +
-                          SRCFILE(PYTHON23/QCMDSRC) THDSAFE(*YES) +
-                          TEXT(PYTHON)
-             ENDPGM
+             crtCmd (lib, "Python", pgm="PythonCmd", text="Python", thdSafe="*YES")
+
 #From crt_python.clp:
 ### TODO: Fix this
-            PGM        PARM(&LIB &OPT &INLINE &DBG &TGT)
-             DCL        VAR(&LIB) TYPE(*CHAR) LEN(10)
-             DCL        VAR(&OPT) TYPE(*CHAR) LEN(2)
-             DCL        VAR(&INLINE) TYPE(*CHAR) LEN(4)
-             DCL        VAR(&DBG) TYPE(*CHAR) LEN(10)
-             DCL        VAR(&TGT) TYPE(*CHAR) LEN(10)
+def crt_python (lib, opt, inline, dbg, tgt):
              CHGENVVAR  ENVVAR(INCLUDE) +
                           VALUE('/source/python2.3/as400:/source/pyth+
                           on2.3/python:/source/python2.3:/source/pyth+
                           on2.3/include:/qibm/proddata/ilec:/qibm/pro+
                           ddata/ilec/include:/qibm/include:/qibm/incl+
                           ude/sys')
-             CRTCMOD    MODULE(&LIB/BLTINMODUL) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/BLTINMODULE.C')
-             CRTCMOD    MODULE(&LIB/CEVAL) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/CEVAL.C')
-             CRTCMOD    MODULE(&LIB/CODECS) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/CODECS.C')
-             CRTCMOD    MODULE(&LIB/COMPILE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/COMPILE.C')
-             CRTCMOD    MODULE(&LIB/ERRORS) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/ERRORS.C')
-             CRTCMOD    MODULE(&LIB/EXCEPTIONS) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/EXCEPTIONS.C')
-             CRTCMOD    MODULE(&LIB/FROZEN) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/FROZEN.C')
-             CRTCMOD    MODULE(&LIB/FROZENMAIN) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/FROZENMAIN.C')
-             CRTCMOD    MODULE(&LIB/GETARGS) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/GETARGS.C')
-             CRTCMOD    MODULE(&LIB/GETCOMPILE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/GETCOMPILER.C')
-             CRTCMOD    MODULE(&LIB/GETCOPYRIG) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/GETCOPYRIGHT.C')
-             CRTCMOD    MODULE(&LIB/GETMTIME) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/GETMTIME.C')
-             CRTCMOD    MODULE(&LIB/GETPLATFOR) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/GETPLATFORM.C')
-             CRTCMOD    MODULE(&LIB/GETVERSION) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/GETVERSION.C')
-             CRTCMOD    MODULE(&LIB/GRAMINIT) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/GRAMINIT.C')
-             CRTCMOD    MODULE(&LIB/IMPORT) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/IMPORT.C')
-             CRTCMOD    MODULE(&LIB/IMPORTDL) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/IMPORTDL.C')
-             CRTCMOD    MODULE(&LIB/MARSHAL) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/MARSHAL.C')
-             CRTCMOD    MODULE(&LIB/MODSUPPORT) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/MODSUPPORT.C')
-             CRTCMOD    MODULE(&LIB/MYSNPRINTF) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/MYSNPRINTF.C')
-             CRTCMOD    MODULE(&LIB/MYSTRTOUL) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/MYSTRTOUL.C')
-             CRTCMOD    MODULE(&LIB/PYFPE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/PYFPE.C')
-             CRTCMOD    MODULE(&LIB/PYSTATE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/PYSTATE.C')
-             CRTCMOD    MODULE(&LIB/PYTHONRUN) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/PYTHONRUN.C')
-             CRTCMOD    MODULE(&LIB/STRDUP) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/STRDUP.C')
-             CRTCMOD    MODULE(&LIB/STRUCTMEMB) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/STRUCTMEMBER.C')
-             CRTCMOD    MODULE(&LIB/SYSMODULE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/SYSMODULE.C')
-             CRTCMOD    MODULE(&LIB/THREAD) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/THREAD.C')
-             CRTCMOD    MODULE(&LIB/TRACEBACK) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/TRACEBACK.C')
-             CRTCMOD    MODULE(&LIB/FUTURE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/FUTURE.C')
-             CRTCMOD    MODULE(&LIB/SYMTABLE) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/SYMTABLE.C')
-             CRTCMOD    MODULE(&LIB/GETOPT) OPTIMIZE(&OPT) +
-                        INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                        SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/GETOPT.C')
+             ("BLTINMODUL SRCSTMF('/SOURCE/PYTHON2.3/PYTHON/BLTINMODULE.C')
+             ("CEVAL", '/SOURCE/PYTHON2.3/PYTHON/CEVAL.C')
+             ("CODECS", '/SOURCE/PYTHON2.3/PYTHON/CODECS.C')
+             ("COMPILE", '/SOURCE/PYTHON2.3/PYTHON/COMPILE.C')
+             ("ERRORS", '/SOURCE/PYTHON2.3/PYTHON/ERRORS.C')
+             ("EXCEPTIONS", '/SOURCE/PYTHON2.3/PYTHON/EXCEPTIONS.C')
+             ("FROZEN", '/SOURCE/PYTHON2.3/PYTHON/FROZEN.C')
+             ("FROZENMAIN", '/SOURCE/PYTHON2.3/PYTHON/FROZENMAIN.C')
+             ("GETARGS", '/SOURCE/PYTHON2.3/PYTHON/GETARGS.C')
+             ("GETCOMPILE", '/SOURCE/PYTHON2.3/PYTHON/GETCOMPILER.C')
+             ("GETCOPYRIG", '/SOURCE/PYTHON2.3/PYTHON/GETCOPYRIGHT.C')
+             ("GETMTIME", '/SOURCE/PYTHON2.3/PYTHON/GETMTIME.C')
+             ("GETPLATFOR", '/SOURCE/PYTHON2.3/PYTHON/GETPLATFORM.C')
+             ("GETVERSION", '/SOURCE/PYTHON2.3/PYTHON/GETVERSION.C')
+             ("GRAMINIT", '/SOURCE/PYTHON2.3/PYTHON/GRAMINIT.C')
+             ("IMPORT", '/SOURCE/PYTHON2.3/PYTHON/IMPORT.C')
+             ("IMPORTDL", '/SOURCE/PYTHON2.3/PYTHON/IMPORTDL.C')
+             ("MARSHAL", '/SOURCE/PYTHON2.3/PYTHON/MARSHAL.C')
+             ("MODSUPPORT", '/SOURCE/PYTHON2.3/PYTHON/MODSUPPORT.C')
+             ("MYSNPRINTF", '/SOURCE/PYTHON2.3/PYTHON/MYSNPRINTF.C')
+             ("MYSTRTOUL", '/SOURCE/PYTHON2.3/PYTHON/MYSTRTOUL.C')
+             ("PYFPE", '/SOURCE/PYTHON2.3/PYTHON/PYFPE.C')
+             ("PYSTATE", '/SOURCE/PYTHON2.3/PYTHON/PYSTATE.C')
+             ("PYTHONRUN", '/SOURCE/PYTHON2.3/PYTHON/PYTHONRUN.C')
+             ("STRDUP", '/SOURCE/PYTHON2.3/PYTHON/STRDUP.C')
+             ("STRUCTMEMB", '/SOURCE/PYTHON2.3/PYTHON/STRUCTMEMBER.C')
+             ("SYSMODULE", '/SOURCE/PYTHON2.3/PYTHON/SYSMODULE.C')
+             ("THREAD", '/SOURCE/PYTHON2.3/PYTHON/THREAD.C')
+             ("TRACEBACK", '/SOURCE/PYTHON2.3/PYTHON/TRACEBACK.C')
+             ("FUTURE", '/SOURCE/PYTHON2.3/PYTHON/FUTURE.C')
+             ("SYMTABLE", '/SOURCE/PYTHON2.3/PYTHON/SYMTABLE.C')
+             ("GETOPT", '/SOURCE/PYTHON2.3/PYTHON/GETOPT.C')
              ENDPGM
 #From crt_zlib.clp:
 ### TODO: Fix this
-def crt_zlib(lib, opt, inline, dbg, tgt): 
+def crt_zlib(lib, opt, inline, dbg, tgt):
              PGM        PARM(&LIB &OPT &INLINE &DBG &TGT)
              DCL        VAR(&LIB) TYPE(*CHAR) LEN(10)
              DCL        VAR(&OPT) TYPE(*CHAR) LEN(2)
@@ -644,100 +328,50 @@ def crt_zlib(lib, opt, inline, dbg, tgt):
              DCL        VAR(&DBG) TYPE(*CHAR) LEN(10)
              DCL        VAR(&TGT) TYPE(*CHAR) LEN(10)
              CHGENVVAR  ENVVAR(INCLUDE) +
-                          VALUE('/source/zlib1.1.4:/source/python2.3+
-                          /modules:/source/python2.3:/source/python+
-                          2.3/include:/qibm/proddata/ilec:/qibm/pr+
-                          oddata/ilec/include:/qibm/include:/qibm/inc+
-                          lude/sys')
+                          VALUE="""/source/zlib1.1.4:/source/python2.3/modules:
+                          /source/python2.3:/source/python2.3/include:
+                          /qibm/proddata/ilec:/qibm/proddata/ilec/include:
+                          /qibm/include:/qibm/include/sys"""
 
-             CRTCMOD    MODULE(&LIB/ZLIBMODULE) +
-                          SRCSTMF('/SOURCE/PYTHON2.3/MODULES/ZLIBMODU+
-                          LE.C') OPTIMIZE(&OPT) INLINE(&INLINE *AUTO) +
-                          SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                          DBGVIEW(&DBG) TGTRLS(&TGT)
-             CRTCMOD    MODULE(&LIB/Z_ADLER32) OPTIMIZE(&OPT) +
-                          INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                          SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/ZLIB1.1.4/ADLER32.C')
-             CRTCMOD    MODULE(&LIB/Z_COMPRESS) OPTIMIZE(&OPT) +
-                          INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                          SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/ZLIB1.1.4/COMPRESS.C') +
-                          TERASPACE(*YES *TSIFC)
-             CRTCMOD    MODULE(&LIB/Z_CRC32) OPTIMIZE(&OPT) +
-                          INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                          SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/ZLIB1.1.4/CRC32.C')
-             CRTCMOD    MODULE(&LIB/Z_DEFLATE) OPTIMIZE(&OPT) +
-                          INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                          SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/ZLIB1.1.4/DEFLATE.C')
-             CRTCMOD    MODULE(&LIB/Z_GZIO) OPTIMIZE(&OPT) +
-                          INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                          SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/ZLIB1.1.4/GZIO.C')
-             CRTCMOD    MODULE(&LIB/Z_INFBLOCK) OPTIMIZE(&OPT) +
-                          INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                          SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/ZLIB1.1.4/INFBLOCK.C')
-             CRTCMOD    MODULE(&LIB/Z_INFCODES) OPTIMIZE(&OPT) +
-                          INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                          SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/ZLIB1.1.4/INFCODES.C')
-             CRTCMOD    MODULE(&LIB/Z_INFFAST) OPTIMIZE(&OPT) +
-                          INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                          SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/ZLIB1.1.4/INFFAST.C')
-             CRTCMOD    MODULE(&LIB/Z_INFLATE) OPTIMIZE(&OPT) +
-                          INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                          SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/ZLIB1.1.4/INFLATE.C')
-             CRTCMOD    MODULE(&LIB/Z_INFTREES) OPTIMIZE(&OPT) +
-                          INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                          SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/ZLIB1.1.4/INFTREES.C')
-             CRTCMOD    MODULE(&LIB/Z_INFUTIL) OPTIMIZE(&OPT) +
-                          INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                          SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/ZLIB1.1.4/INFUTIL.C')
-             CRTCMOD    MODULE(&LIB/Z_TREES) OPTIMIZE(&OPT) +
-                          INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                          SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/ZLIB1.1.4/TREES.C')
-             CRTCMOD    MODULE(&LIB/Z_UNCOMPR) OPTIMIZE(&OPT) +
-                          INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                          SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/ZLIB1.1.4/UNCOMPR.C')
-             CRTCMOD    MODULE(&LIB/Z_ZUTIL) OPTIMIZE(&OPT) +
-                          INLINE(&INLINE *AUTO) DBGVIEW(&DBG) TGTRLS(&TGT) +
-                          SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
-                        SRCSTMF('/SOURCE/ZLIB1.1.4/ZUTIL.C')
-             ENDPGM
+             ("ZLIBMODULE", '/SOURCE/PYTHON2.3/MODULES/ZLIBMODULE.C')
+             ("Z_ADLER32", '/SOURCE/ZLIB1.1.4/ADLER32.C')
+             # Compile this next one with TERASPACE(*YES *TSIFC)
+             ("Z_COMPRESS", '/SOURCE/ZLIB1.1.4/COMPRESS.C')
+             ("Z_CRC32", '/SOURCE/ZLIB1.1.4/CRC32.C')
+             ("Z_DEFLATE", '/SOURCE/ZLIB1.1.4/DEFLATE.C')
+             ("Z_GZIO", '/SOURCE/ZLIB1.1.4/GZIO.C')
+             ("Z_INFBLOCK", '/SOURCE/ZLIB1.1.4/INFBLOCK.C')
+             ("Z_INFCODES", '/SOURCE/ZLIB1.1.4/INFCODES.C')
+             ("Z_INFFAST", '/SOURCE/ZLIB1.1.4/INFFAST.C')
+             ("Z_INFLATE", '/SOURCE/ZLIB1.1.4/INFLATE.C')
+             ("Z_INFTREES", '/SOURCE/ZLIB1.1.4/INFTREES.C')
+             ("Z_INFUTIL", '/SOURCE/ZLIB1.1.4/INFUTIL.C')
+             ("Z_TREES", '/SOURCE/ZLIB1.1.4/TREES.C')
+             ("Z_UNCOMPR", '/SOURCE/ZLIB1.1.4/UNCOMPR.C')
+             ("Z_ZUTIL", '/SOURCE/ZLIB1.1.4/ZUTIL.C')
+
 #From crt_as400.clp:
 ### TODO: Fix this
 def crt_as400(lib, opt, inline, dbg, tgt):
              CHGENVVAR  ENVVAR(INCLUDE) +
-                          VALUE('/source/PYTHON2.3/as400:/source/pyth+
-                          on2.3:/source/PYTHON2.3/include:/source/pyt  +
-                          hon2.3/python:/qibm/proddata/ilec:/qibm/pro  +
-                          ddata/ilec/include:/qibm/include:/qibm/incl+
-                          ude/sys')
-
-             CRTCMOD    MODULE(&LIB/FILE400MOD) OPTIMIZE(&OPT) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/AS400/FILE400MODULE.C')
-          /* ALWAYS COMPILE THESE NEXT 2 WITH NO OPTIMIZE */
-             CRTCMOD    MODULE(&LIB/ZOS400) OPTIMIZE(10) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/AS400/_OS400.C'     )
-             CRTCMOD    MODULE(&LIB/AS400MISC) OPTIMIZE(10) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/AS400/AS400MISC.C')
-             CRTCMOD    MODULE(&LIB/DYNLOAD_AS) +
-                          SRCSTMF('/SOURCE/PYTHON2.3/AS400/DYNLOAD_AS400.C')
-             CRTCMOD    MODULE(&LIB/PYTHONCMD) OPTIMIZE(&OPT) +
-                        SRCSTMF('/SOURCE/PYTHON2.3/AS400/PYTHONCMD.C')
-             CRTCMOD    MODULE(&LIB/ZDB) +
-                          SRCSTMF('/SOURCE/PYTHON2.3/AS400/_DB.C') +
-             CRTCMOD    MODULE(&LIB/SGMLMODULE) +
-                          SRCSTMF('/SOURCE/PYTHON2.3/AS400/SGMLMODULE.C') +
-             CRTCMOD    MODULE(&LIB/ZDATE) +
+                          VALUE("""/source/PYTHON2.3/as400:/source/python2.3:
+                          /source/PYTHON2.3/include:/source/python2.3/python:
+                          /qibm/proddata/ilec:/qibm/proddata/ilec/include:
+                          /qibm/include:/qibm/include/sys')
+             crtCModCmd = """  CRTCMOD    MODULE(&LIB/ZDATE) +
                           SRCSTMF('/SOURCE/PYTHON2.3/AS400/_DATE.C') +
+                          OPTIMIZE(&OPT) INLINE(&INLINE *AUTO) +
+                          SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +
+                          DBGVIEW(&DBG) TGTRLS(&TGT)"""
+
+             (("FILE400MOD", '/SOURCE/PYTHON2.3/AS400/FILE400MODULE.C'),
+          /* ALWAYS COMPILE THESE NEXT 2 WITH NO OPTIMIZE */
+             ("ZOS400", '/SOURCE/PYTHON2.3/AS400/_OS400.C'),
+             ("AS400MISC", '/SOURCE/PYTHON2.3/AS400/AS400MISC.C'),
+
+             ("DYNLOAD_AS", '/SOURCE/PYTHON2.3/AS400/DYNLOAD_AS400.C'),
+             ("PYTHONCMD", '/SOURCE/PYTHON2.3/AS400/PYTHONCMD.C'),
+             ("ZDB", '/SOURCE/PYTHON2.3/AS400/_DB.C'),
+             ("SGMLMODULE", '/SOURCE/PYTHON2.3/AS400/SGMLMODULE.C'),
+             ("&LIB/ZDATE", '/SOURCE/PYTHON2.3/AS400/_DATE.C'),
              ENDPGM

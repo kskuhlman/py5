@@ -4,8 +4,16 @@
 
 #include <ctype.h>
 
+#ifdef __ILEC400__
+#include "as400misc.h"
+#endif
+
 #ifdef COUNT_ALLOCS
 int null_strings, one_strings;
+#endif
+
+#if !defined(HAVE_LIMITS_H) && !defined(UCHAR_MAX)
+#define UCHAR_MAX 255
 #endif
 
 static PyStringObject *characters[UCHAR_MAX + 1];
@@ -784,12 +792,16 @@ string_print(PyStringObject *op, FILE *fp, int flags)
                         fprintf(fp, "\\n");
                 else if (c == '\r')
                         fprintf(fp, "\\r");
+#ifdef __ILEC400__
+else if (!isprint(c))
+#else
 #ifdef __MVS__ /* EBCDIC */
 else if ( isprint(c)==0 )
   fprintf(fp, "\\x%02x", c & 0xff);
 #else /*ASCII */
 else if (c < ' ' || c >= 0x7f)
 if printf(fp, "\\x%02x", c & 0xff);
+#endif
 #endif
 		else
 			fputc(c, fp);
@@ -840,7 +852,11 @@ PyString_Repr(PyObject *obj, int smartquotes)
 				*p++ = '\\', *p++ = 'n';
 			else if (c == '\r')
 				*p++ = '\\', *p++ = 'r';
+#ifdef __ILEC400__
+            else if (!isprint(c)) {
+#else
 			else if (c < ' ' || c >= 0x7f) {
+#endif
 				/* For performance, we don't want to call
 				   PyOS_snprintf here (extra layers of
 				   function call). */
@@ -3866,14 +3882,25 @@ PyString_Format(PyObject *format, PyObject *args)
 #ifdef Py_USING_UNICODE
 	PyObject *v, *w;
 #endif
+#ifdef __ILEC400__
+    PyObject *format37;
+#endif
 	PyObject *dict = NULL;
 	if (format == NULL || !PyString_Check(format) || args == NULL) {
 		PyErr_BadInternalCall();
 		return NULL;
 	}
 	orig_args = args;
+#ifdef __ILEC400__
+/* convert format to cp37 */
+    fmtcnt = PyString_Size(format);
+    format37 = PyString_FromStringAndSize(NULL, fmtcnt + 1);
+    fmt = PyString_AsString(format37);
+    strToCp37(PyString_AsString(format), fmt);
+#else
 	fmt = PyString_AS_STRING(format);
 	fmtcnt = PyString_GET_SIZE(format);
+#endif
 	reslen = rescnt = fmtcnt + 100;
 	result = PyString_FromStringAndSize((char *)NULL, reslen);
 	if (result == NULL)
@@ -3901,7 +3928,14 @@ PyString_Format(PyObject *format, PyObject *args)
 					+ reslen - rescnt;
 				--rescnt;
 			}
+#ifdef __ILEC400__
+            /* convert back from cp37  */
+            fromCp37(fmt, res, 1);
+            *fmt++;
+            *res++;
+#else
 			*res++ = *fmt++;
+#endif
 		}
 		else {
 			/* Got a format specifier */
@@ -4160,8 +4194,13 @@ PyString_Format(PyObject *format, PyObject *args)
 				PyErr_Format(PyExc_ValueError,
 				  "unsupported format character '%c' (0x%x) "
 				  "at index %i",
-				  c, c,
-				  (int)(fmt - 1 - PyString_AsString(format)));
+#ifdef __ILEC400__
+                  c, c,
+                  (int)(fmt - 1 - PyString_AsString(format37)));
+#else
+                  c, c,
+                  (int)(fmt - 1 - PyString_AsString(format)));
+#endif
 				goto error;
 			}
 			if (sign) {
@@ -4251,6 +4290,9 @@ PyString_Format(PyObject *format, PyObject *args)
 	if (args_owned) {
 		Py_DECREF(args);
 	}
+#ifdef __ILEC400__
+    Py_XDECREF(format37);
+#endif
 	_PyString_Resize(&result, reslen - rescnt);
 	return result;
 
@@ -4295,6 +4337,9 @@ PyString_Format(PyObject *format, PyObject *args)
 	/* Paste what we have (result) to what the Unicode formatting
 	   function returned (v) and return the result (or error) */
 	w = PyUnicode_Concat(result, v);
+#ifdef __ILEC400__
+    Py_XDECREF(format37);
+#endif
 	Py_DECREF(result);
 	Py_DECREF(v);
 	Py_DECREF(args);
@@ -4302,6 +4347,9 @@ PyString_Format(PyObject *format, PyObject *args)
 #endif /* Py_USING_UNICODE */
 
  error:
+#ifdef __ILEC400__
+    Py_XDECREF(format37);
+#endif
 	Py_DECREF(result);
 	if (args_owned) {
 		Py_DECREF(args);

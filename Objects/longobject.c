@@ -684,11 +684,13 @@ PyLong_FromVoidPtr(void *p)
 	return PyInt_FromLong((long)p);
 #else
 
+#ifndef __ILEC400__
 #ifndef HAVE_LONG_LONG
 #   error "PyLong_FromVoidPtr: sizeof(void*) > sizeof(long), but no long long"
 #endif
 #if SIZEOF_LONG_LONG < SIZEOF_VOID_P
 #   error "PyLong_FromVoidPtr: sizeof(PY_LONG_LONG) < sizeof(void*)"
+#endif
 #endif
 	/* optimize null pointers */
 	if (p == NULL)
@@ -716,11 +718,13 @@ PyLong_AsVoidPtr(PyObject *vv)
 		x = PyLong_AsLong(vv);
 #else
 
+#ifndef __ILEC400__
 #ifndef HAVE_LONG_LONG
 #   error "PyLong_AsVoidPtr: sizeof(void*) > sizeof(long), but no long long"
 #endif
 #if SIZEOF_LONG_LONG < SIZEOF_VOID_P
 #   error "PyLong_AsVoidPtr: sizeof(PY_LONG_LONG) < sizeof(void*)"
+#endif
 #endif
 	PY_LONG_LONG x;
 
@@ -1213,7 +1217,7 @@ long_from_binary_base(char **str, int base)
 		char ch = *p;
 
  /* EBCDIC / ASCII PORTABILITY */
- #ifdef __MVS__
+ #ifdef __ILEC400__ || __MVS__
 		if (ch >= '0')
 			k = ch - '0';
 		else if (ch >= 'A')
@@ -1256,7 +1260,7 @@ long_from_binary_base(char **str, int base)
 		char ch = *p;
 
  /* EBCDIC / ASCII PORTABILITY */
- #ifdef __MVS__
+ #ifdef __ILEC400__ || __MVS__
 		if (ch >= '0')
 			k = ch - '0';
 		else if (ch >= 'A')
@@ -1340,7 +1344,7 @@ PyLong_FromString(char *str, char **pend, int base)
 
 
  /* EBCDIC / ASCII PORTABILITY */
- #ifdef __MVS__
+ #ifdef __ILEC400__ || __MVS__
 		if (*str >= '0')
 			k = *str - '0';
 		else if (*str >= 'a')

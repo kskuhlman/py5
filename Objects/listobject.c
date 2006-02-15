@@ -8,6 +8,9 @@
 #include <sys/types.h>		/* For size_t */
 #endif
 
+#ifdef __ILEC400__
+#include "as400misc.h"
+#endif
 /* Ensure ob_item has room for at least newsize elements, and set
  * ob_size to newsize.  If newsize > ob_size on entry, the content
  * of the new slots at exit is undefined heap trash; it's the caller's
@@ -274,12 +277,20 @@ static int
 list_print(PyListObject *op, FILE *fp, int flags)
 {
 	int i;
+#ifdef __ILEC400__
+    char cbuf[6];
+    char *buf = cbuf;
+#endif
 
 	i = Py_ReprEnter((PyObject*)op);
 	if (i != 0) {
 		if (i < 0)
 			return i;
+		#ifdef __ILEC400__
+		fprintf(fp, strFromCp37("[...]", buf));
+		#else
 		fprintf(fp, "[...]");
+		#endif
 		return 0;
 	}
 	fprintf(fp, "[");
@@ -302,16 +313,24 @@ list_repr(PyListObject *v)
 	int i;
 	PyObject *s, *temp;
 	PyObject *pieces = NULL, *result = NULL;
+#ifdef __ILEC400__
+    char cbuf[6];
+    char *buf = cbuf;
+#endif
 
 	i = Py_ReprEnter((PyObject*)v);
 	if (i != 0) {
 		return i > 0 ? PyString_FromString("[...]") : NULL;
 	}
 
-	if (v->ob_size == 0) {
-		result = PyString_FromString("[]");
-		goto Done;
-	}
+    if (v->ob_size == 0) {
+#ifdef __ILEC400__
+        result = PyString_FromString(strFromCp37("[]", buf));
+#else
+        result = PyString_FromString("[]");
+#endif
+        goto Done;
+    }
 
 	pieces = PyList_New(0);
 	if (pieces == NULL)
@@ -332,30 +351,42 @@ list_repr(PyListObject *v)
 
 	/* Add "[]" decorations to the first and last items. */
 	assert(PyList_GET_SIZE(pieces) > 0);
-	s = PyString_FromString("[");
-	if (s == NULL)
-		goto Done;
-	temp = PyList_GET_ITEM(pieces, 0);
-	PyString_ConcatAndDel(&s, temp);
-	PyList_SET_ITEM(pieces, 0, s);
-	if (s == NULL)
-		goto Done;
+#ifdef __ILEC400__
+    s = PyString_FromString(strFromCp37("[", buf));
+#else
+    s = PyString_FromString("[");
+#endif
+    if (s == NULL)
+        goto Done;
+    temp = PyList_GET_ITEM(pieces, 0);
+    PyString_ConcatAndDel(&s, temp);
+    PyList_SET_ITEM(pieces, 0, s);
+    if (s == NULL)
+        goto Done;
 
-	s = PyString_FromString("]");
-	if (s == NULL)
-		goto Done;
-	temp = PyList_GET_ITEM(pieces, PyList_GET_SIZE(pieces) - 1);
-	PyString_ConcatAndDel(&temp, s);
-	PyList_SET_ITEM(pieces, PyList_GET_SIZE(pieces) - 1, temp);
-	if (temp == NULL)
-		goto Done;
+#ifdef __ILEC400__
+    s = PyString_FromString(strFromCp37("]", buf));
+#else
+    s = PyString_FromString("]");
+#endif
+    if (s == NULL)
+        goto Done;
+    temp = PyList_GET_ITEM(pieces, PyList_GET_SIZE(pieces) - 1);
+    PyString_ConcatAndDel(&temp, s);
+    PyList_SET_ITEM(pieces, PyList_GET_SIZE(pieces) - 1, temp);
+    if (temp == NULL)
+        goto Done;
 
-	/* Paste them all together with ", " between. */
-	s = PyString_FromString(", ");
-	if (s == NULL)
-		goto Done;
-	result = _PyString_Join(s, pieces);
-	Py_DECREF(s);
+    /* Paste them all together with ", " between. */
+#ifdef __ILEC400__
+    s = PyString_FromString(strFromCp37(", ", buf));
+#else
+    s = PyString_FromString(", ");
+#endif
+    if (s == NULL)
+        goto Done;
+    result = _PyString_Join(s, pieces);
+    Py_DECREF(s);
 
 Done:
 	Py_XDECREF(pieces);

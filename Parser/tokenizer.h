@@ -1,5 +1,8 @@
 #ifndef Py_TOKENIZER_H
 #define Py_TOKENIZER_H
+#ifdef __ILEC400__
+#include <iconv.h>
+#endif
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -52,6 +55,12 @@ struct tok_state {
 #endif
 	const char* enc;
 	const char* str;
+#ifdef __ILEC400__
+	char *tmpbuf;	/* temp buffer */
+	int tmpbufsize;
+	iconv_t cdto;	/* conversion descriptor to us*/
+	iconv_t cdfrom;	/* conversion descriptor from us*/
+#endif
 };
 
 extern struct tok_state *PyTokenizer_FromString(const char *);

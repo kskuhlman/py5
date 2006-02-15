@@ -9,6 +9,10 @@
 
 #include "tokenizer.h"
 #include "errcode.h"
+#ifdef __ILEC400__
+#include <iconv.h>
+#include <as400misc.h>
+#endif
 
 #ifndef PGEN
 #include "unicodeobject.h"
@@ -105,6 +109,12 @@ char *_PyParser_TokenNames[] = {
 static struct tok_state *
 tok_new(void)
 {
+#ifdef __ILEC400__
+	char fromcode1[33] = "IBMCCSID000000000101";
+	char tocode1[33] = "IBMCCSID00037";
+	char fromcode2[33] = "IBMCCSID000370000101";
+	char tocode2[33] = "IBMCCSID00000";
+#endif
 	struct tok_state *tok = PyMem_NEW(struct tok_state, 1);
 	if (tok == NULL)
 		return NULL;
@@ -134,8 +144,45 @@ tok_new(void)
 	tok->decoding_readline = NULL;
 	tok->decoding_buffer = NULL;
 #endif
+#ifdef __ILEC400__
+	/* open convertion descriptors */
+	tok->tmpbuf =NULL;
+	tok->tmpbufsize = 0;
+	memset(&fromcode1[20],'\0',13);
+	memset(&tocode1[13],'\0',20);
+	tok->cdto = iconv_open(tocode1, fromcode1);
+	memset(&fromcode2[20],'\0',13);
+	memset(&tocode2[13],'\0',20);
+	tok->cdfrom = iconv_open(tocode2, fromcode2);
+#endif
 	return tok;
 }
+
+#ifdef __ILEC400__
+void
+ConvertString(register struct tok_state *tok, char cvttype, char *s, int ssize)
+{
+	size_t sizefrom = ssize;
+	size_t sizeto = ssize;
+	char *cdp1, *cdp2;
+	if (tok->tmpbufsize == 0) {
+		tok->tmpbuf = PyMem_NEW(char, ssize + 1);
+		tok->tmpbufsize = ssize + 1;
+	} else if (ssize > tok->tmpbufsize) {
+		PyMem_RESIZE(tok->tmpbuf, char, ssize + 1);
+		tok->tmpbufsize = ssize + 1;
+	}
+	if (tok->tmpbuf && ssize > 0) {
+		cdp1 = s;
+		cdp2 = tok->tmpbuf;
+		if (cvttype == 't')
+			iconv(tok->cdto, &cdp1, &sizefrom, &cdp2, &sizeto);
+		else
+			iconv(tok->cdfrom, &cdp1, &sizefrom, &cdp2, &sizeto);
+		memcpy(s, tok->tmpbuf, ssize);
+	}
+}
+#endif
 
 #ifdef PGEN
 
@@ -453,6 +500,7 @@ decoding_fgets(char *s, int size, struct tok_state *tok)
 			return error_ret(tok);
 		}
 	}
+#ifndef __ILEC400__
 #ifndef PGEN
 #ifndef __MVS__ /* not applicable to EBCDIC contexts */
 	if (warn && line && !tok->issued_encoding_warning && !tok->encoding) {
@@ -481,6 +529,7 @@ decoding_fgets(char *s, int size, struct tok_state *tok)
 		PyErr_Warn(PyExc_DeprecationWarning, buf);
 		tok->issued_encoding_warning = 1;
 	}
+#endif
 #endif
 	return line;
 }
@@ -607,11 +656,21 @@ PyTokenizer_FromString(const char *str)
 	struct tok_state *tok = tok_new();
 	if (tok == NULL)
 		return NULL;
+#ifdef __ILEC400__
+	if ((tok->buf = PyMem_NEW(char, strlen(str) + 1)) == NULL) {
+		PyMem_DEL(tok);
+		return NULL;
+	}
+	memcpy(tok->buf, str, strlen(str) + 1);
+	tok->cur = tok->end = tok->inp = tok->buf;
+	ConvertString(tok, 't', tok->buf, strlen(str) + 1);
+#else	
 	str = (char *)decode_str(str, tok);
 	if (str == NULL)
 		return NULL;
 	/* XXX: constify members. */
 	tok->buf = tok->cur = tok->end = tok->inp = (char*)str;
+#endif
 	return tok;
 }
 
@@ -628,6 +687,12 @@ PyTokenizer_FromFile(FILE *fp, char *ps1, char *ps2)
 		PyMem_DEL(tok);
 		return NULL;
 	}
+#ifdef __ILEC400__
+	if ((tok->tmpbuf = PyMem_NEW(char, BUFSIZ + 1)) == NULL) {
+		PyMem_DEL(tok);
+		return NULL;
+	}
+#endif
 	tok->cur = tok->inp = tok->buf;
 	tok->end = tok->buf + BUFSIZ;
 	tok->fp = fp;
@@ -642,6 +707,13 @@ PyTokenizer_FromFile(FILE *fp, char *ps1, char *ps2)
 void
 PyTokenizer_Free(struct tok_state *tok)
 {
+#ifdef __ILEC400__
+	if (tok->tmpbuf != NULL)
+		PyMem_DEL(tok->tmpbuf);
+	/* close convertion descriptors */
+	iconv_close(tok->cdto);
+	iconv_close(tok->cdfrom);
+#endif
 	if (tok->encoding != NULL)
 		PyMem_DEL(tok->encoding);
 #ifndef PGEN
@@ -741,6 +813,9 @@ tok_nextc(register struct tok_state *tok)
 		}
 		if (tok->prompt != NULL) {
 			char *new = PyOS_Readline(stdin, stdout, tok->prompt);
+#ifdef __ILEC400__
+			ConvertString(tok, 't', new, strlen(new));
+#endif
 			if (tok->nextprompt != NULL)
 				tok->prompt = tok->nextprompt;
 			if (new == NULL)
@@ -790,6 +865,13 @@ tok_nextc(register struct tok_state *tok)
 			int cur = 0;
 			char *pt;
 			if (tok->start == NULL) {
+#ifdef __ILEC400__
+				if (tok->tmpbuf == NULL) {
+					tok->tmpbuf = PyMem_NEW(char, BUFSIZ);
+					tok->done = E_NOMEM;
+					return EOF;
+				}
+#endif
 				if (tok->buf == NULL) {
 					tok->buf = PyMem_NEW(char, BUFSIZ);
 					if (tok->buf == NULL) {
@@ -804,6 +886,9 @@ tok_nextc(register struct tok_state *tok)
 					done = 1;
 				}
 				else {
+#ifdef __ILEC400__
+					ConvertString(tok, 't', tok->buf, strlen(tok->buf));
+#endif
 					tok->done = E_OK;
 					tok->inp = strchr(tok->buf, '\0');
 					done = tok->inp[-1] == '\n';
@@ -844,6 +929,12 @@ tok_nextc(register struct tok_state *tok)
 					   fake one */
 					strcpy(tok->inp, "\n");
 				}
+#ifdef __ILEC400__
+				else {
+					/* convert new ccsid 037  */
+					ConvertString(tok, 't', tok->inp, strlen(tok->inp));
+				}
+#endif
 				tok->inp = strchr(tok->inp, '\0');
 				done = tok->inp[-1] == '\n';
 			}
@@ -1210,7 +1301,11 @@ tok_get(register struct tok_state *tok, char **p_start, char **p_end)
 	}
 	
 	/* Identifier (most frequent token!) */
+#ifdef __ILEC400__
+	if (isalpha37(c) || c == '_') {
+#else	  
 	if (isalpha(c) || c == '_') {
+#endif
 		/* Process r"", u"" and ur"" */
 		switch (c) {
 		case 'r':
@@ -1228,7 +1323,11 @@ tok_get(register struct tok_state *tok, char **p_start, char **p_end)
 				goto letter_quote;
 			break;
 		}
+#ifdef __ILEC400__
+		while (isalnum37(c) || c == '_') {
+#else	  
 		while (isalnum(c) || c == '_') {
+#endif
 			c = tok_nextc(tok);
 		}
 		tok_backup(tok, c);
@@ -1361,6 +1460,9 @@ tok_get(register struct tok_state *tok, char **p_start, char **p_end)
 		int quote = c;
 		int triple = 0;
 		int tripcount = 0;
+#ifdef __ILEC400__
+		int cd_size;
+#endif		
 		for (;;) {
 			c = tok_nextc(tok);
 			if (c == '\n') {
@@ -1408,6 +1510,15 @@ tok_get(register struct tok_state *tok, char **p_start, char **p_end)
 		}
 		*p_start = tok->start;
 		*p_end = tok->cur;
+#ifdef __ILEC400__
+		/* convert strings back to current codepage */
+		cd_size = (tok->cur - tok->start) - 2;
+		if (cd_size > 0) {
+			tok->start++;
+			ConvertString(tok, 'f', tok->start, cd_size);
+			tok->start--;
+		}
+#endif
 		return STRING;
 	}
 	

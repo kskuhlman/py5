@@ -1,4 +1,4 @@
-/* 
+/*
 
 Unicode implementation based on original code by Fredrik Lundh,
 modified by Marc-Andre Lemburg <mal@lemburg.com> according to the
@@ -609,7 +609,7 @@ PyObject *PyUnicode_Encode(const Py_UNICODE *s,
 
 #ifdef __ILEC400__
 
-PyObject *PyUnicode_DecodeEbcdic(const char *s, int size, 
+PyObject *PyUnicode_DecodeEbcdic(const char *s, int size,
                                  const char *error)
 {
     PyUnicodeObject *unicode;
@@ -639,7 +639,7 @@ PyObject *PyUnicode_DecodeEbcdic(const char *s, int size,
             break;
         }
         wsize -= i;
-    }   
+    }
     return (PyObject *)unicode;
 }
 
@@ -676,7 +676,7 @@ PyObject *PyUnicode_EncodeEbcdic(const Py_UNICODE *p, int size,
             break;
         }
         wsize -= i;
-    }   
+    }
     return v;
 }
 
@@ -711,7 +711,7 @@ PyObject *PyUnicode_AsEncodedString(PyObject *unicode,
     if (errors == NULL) {
 #ifdef __ILEC400__
 /* ebcdic is default codepage */
-    if (strcmp(encoding, "ebcdic") == 0)  
+    if (strcmp(encoding, "ebcdic") == 0)
         return PyUnicode_AsEbcdicString(unicode);
 #endif
 	if (strcmp(encoding, "utf-8") == 0)
@@ -2070,12 +2070,12 @@ PyObject *unicodeescape_string(const Py_UNICODE *s,
     if (quotes) {
         *p++ = 'u';
 #ifdef __ILEC400__
-        *p = (findchar(s, size, L'\'') && 
+        *p = (findchar(s, size, L'\'') &&
               !findchar(s, size, L'"')) ? '"' : '\'';
     qp = (*p == '"') ? L'"' : L'\'';
     *p++;
 #else
-        *p++ = (findchar(s, size, '\'') && 
+        *p++ = (findchar(s, size, '\'') &&
                 !findchar(s, size, '"')) ? '"' : '\'';
 #endif
     }
@@ -2083,7 +2083,7 @@ PyObject *unicodeescape_string(const Py_UNICODE *s,
         Py_UNICODE ch = *s++;
 
         /* Escape quotes */
-        if (quotes && 
+        if (quotes &&
 #ifdef __ILEC400__
         (ch == qp || ch == L'\\')) {
         char s2[2];
@@ -2096,7 +2096,7 @@ PyObject *unicodeescape_string(const Py_UNICODE *s,
             *p++ = (char) ch;
 #endif
         continue;
-        } 
+        }
 
 #ifdef Py_UNICODE_WIDE
         /* Map 21-bit characters to '\U00xxxxxx' */
@@ -2177,7 +2177,7 @@ PyObject *unicodeescape_string(const Py_UNICODE *s,
     else {
         char s2[2];
             wctomb(s2, ch);
-            if (isprint(s2[0])) 
+            if (isprint(s2[0]))
                 *p++ = s2[0];
             else {
                 *p++ = '\\';
@@ -4580,7 +4580,7 @@ PyObject *rsplit_whitespace(PyUnicodeObject *self,
     return NULL;
 }
 
-static 
+static
 PyObject *rsplit_char(PyUnicodeObject *self,
 		      PyObject *list,
 		      Py_UNICODE ch,
@@ -4610,7 +4610,7 @@ PyObject *rsplit_char(PyUnicodeObject *self,
     return NULL;
 }
 
-static 
+static
 PyObject *rsplit_substring(PyUnicodeObject *self,
 			   PyObject *list,
 			   PyUnicodeObject *substring,
@@ -5184,7 +5184,7 @@ unicode_encode(PyUnicodeObject *self, PyObject *args)
     char *encoding = NULL;
     char *errors = NULL;
     PyObject *v;
-    
+
     if (!PyArg_ParseTuple(args, "|ss:encode", &encoding, &errors))
         return NULL;
     v = PyUnicode_AsEncodedObject((PyObject *)self, encoding, errors);
@@ -5220,7 +5220,7 @@ unicode_decode(PyUnicodeObject *self, PyObject *args)
     char *encoding = NULL;
     char *errors = NULL;
     PyObject *v;
-    
+
     if (!PyArg_ParseTuple(args, "|ss:decode", &encoding, &errors))
         return NULL;
     v = PyUnicode_AsDecodedObject((PyObject *)self, encoding, errors);
@@ -5260,7 +5260,7 @@ unicode_expandtabs(PyUnicodeObject *self, PyObject *args)
 	return NULL;
 #ifdef __ILEC400__
 #pragma convert(850)
-#endif   
+#endif
 
     /* First pass: determine size of output string */
     i = j = 0;
@@ -5304,7 +5304,7 @@ unicode_expandtabs(PyUnicodeObject *self, PyObject *args)
 
 #ifdef __ILEC400__
 #pragma convert(0)
-#endif   
+#endif
     return (PyObject*) u;
 }
 
@@ -6208,7 +6208,7 @@ PyObject *PyUnicode_RSplit(PyObject *s,
 			   int maxsplit)
 {
     PyObject *result;
-    
+
     s = PyUnicode_FromObject(s);
     if (s == NULL)
 	return NULL;
@@ -6793,6 +6793,8 @@ formatint(Py_UNICODE *buf,
     char fmt[64]; /* plenty big enough! */
 #endif
     long x;
+    /* KSK: sign wasn't defined? */
+    char *sign;
 
     x = PyInt_AsLong(v);
     if (x == -1 && PyErr_Occurred())
@@ -6800,6 +6802,7 @@ formatint(Py_UNICODE *buf,
     if (x < 0 && type == 'u') {
         type = 'd';
     }
+
     if (x < 0 && (type == 'x' || type == 'X' || type == 'o'))
         sign = "-";
     else
@@ -6816,7 +6819,7 @@ formatint(Py_UNICODE *buf,
         return -1;
     }
 #ifdef __ILEC400__
-    if ((flags & F_ALT) && 
+    if ((flags & F_ALT) &&
         (type == L'x' || type == L'X'))
         swprintf(fmt, 64, L"0%lc%%%s.%dl%lc", t2, L"#", prec, t2);
     else
@@ -6858,6 +6861,7 @@ formatint(Py_UNICODE *buf,
         return usprintf(buf, fmt, -x);
     else
         return usprintf(buf, fmt, x);
+#endif
 }
 
 static int
@@ -6876,7 +6880,7 @@ formatchar(Py_UNICODE *buf,
     }
 
     else if (PyString_Check(v)) {
-    if (PyString_GET_SIZE(v) != 1) 
+    if (PyString_GET_SIZE(v) != 1)
         goto onError;
 #ifdef __ILEC400__
     s2[0] = PyString_AS_STRING(v)[0];
@@ -6967,7 +6971,7 @@ PyObject *PyUnicode_Format(PyObject *format,
 	dict = args;
 #ifdef __ILEC400__
 #pragma convert(850)
-#endif   
+#endif
 
     while (--fmtcnt >= 0) {
 	if (*fmt != '%') {
@@ -7005,12 +7009,12 @@ PyObject *PyUnicode_Format(PyObject *format,
 		if (dict == NULL) {
 #ifdef __ILEC400__
 #pragma convert(0)
-#endif   
+#endif
 		    PyErr_SetString(PyExc_TypeError,
-				    "format requires a mapping"); 
+				    "format requires a mapping");
 #ifdef __ILEC400__
 #pragma convert(850)
-#endif   
+#endif
 		    goto onError;
 		}
 		++fmt;
@@ -7028,7 +7032,7 @@ PyObject *PyUnicode_Format(PyObject *format,
 		if (fmtcnt < 0 || pcount > 0) {
 #ifdef __ILEC400__
 #pragma convert(0)
-#endif   
+#endif
 		    PyErr_SetString(PyExc_ValueError,
 				    "incomplete format key");
 		    goto onError;
@@ -7063,7 +7067,7 @@ PyObject *PyUnicode_Format(PyObject *format,
 		switch (c = *fmt++) {
 #ifdef __ILEC400__
 #pragma convert(850)
-#endif   
+#endif
 		case '-': flags |= F_LJUST; continue;
 		case '+': flags |= F_SIGN; continue;
 		case ' ': flags |= F_BLANK; continue;
@@ -7079,12 +7083,12 @@ PyObject *PyUnicode_Format(PyObject *format,
 		if (!PyInt_Check(v)) {
 #ifdef __ILEC400__
 #pragma convert(0)
-#endif   
+#endif
 		    PyErr_SetString(PyExc_TypeError,
 				    "* wants int");
 #ifdef __ILEC400__
 #pragma convert(850)
-#endif   
+#endif
 		    goto onError;
 		}
 		width = PyInt_AsLong(v);
@@ -7104,12 +7108,12 @@ PyObject *PyUnicode_Format(PyObject *format,
 		    if ((width*10) / 10 != width) {
 #ifdef __ILEC400__
 #pragma convert(0)
-#endif   
+#endif
 			PyErr_SetString(PyExc_ValueError,
 					"width too big");
 #ifdef __ILEC400__
 #pragma convert(850)
-#endif   
+#endif
 			goto onError;
 		    }
 		    width = width*10 + (c - '0');
@@ -7126,12 +7130,12 @@ PyObject *PyUnicode_Format(PyObject *format,
 		    if (!PyInt_Check(v)) {
 #ifdef __ILEC400__
 #pragma convert(0)
-#endif   
+#endif
 			PyErr_SetString(PyExc_TypeError,
 					"* wants int");
 #ifdef __ILEC400__
 #pragma convert(850)
-#endif   
+#endif
 			goto onError;
 		    }
 		    prec = PyInt_AsLong(v);
@@ -7149,12 +7153,12 @@ PyObject *PyUnicode_Format(PyObject *format,
 			if ((prec*10) / 10 != prec) {
 #ifdef __ILEC400__
 #pragma convert(0)
-#endif   
+#endif
 			    PyErr_SetString(PyExc_ValueError,
 					    "prec too big");
 #ifdef __ILEC400__
 #pragma convert(850)
-#endif   
+#endif
 			    goto onError;
 			}
 			prec = prec*10 + (c - '0');
@@ -7170,12 +7174,12 @@ PyObject *PyUnicode_Format(PyObject *format,
 	    if (fmtcnt < 0) {
 #ifdef __ILEC400__
 #pragma convert(0)
-#endif   
+#endif
 		PyErr_SetString(PyExc_ValueError,
 				"incomplete format");
 #ifdef __ILEC400__
 #pragma convert(850)
-#endif   
+#endif
 		goto onError;
 	    }
 	    if (c != '%') {
@@ -7208,18 +7212,10 @@ PyObject *PyUnicode_Format(PyObject *format,
 			temp = PyObject_Repr(v);
 		    if (temp == NULL)
 			goto onError;
-		    if (!PyString_Check(temp)) {
-			/* XXX Note: this should never happen, since
-   			       PyObject_Repr() and PyObject_Str() assure
-			       this */
-			Py_DECREF(temp);
-#ifdef __ILEC400__
-#pragma convert(0)
-#endif   
-			PyErr_SetString(PyExc_TypeError,
-					"%s argument has non-string str()");
-			goto onError;
-		    }
+                    if (PyUnicode_Check(temp))
+                        /* nothing to do */;
+                    else if (PyString_Check(temp)) {
+                        /* convert to string to Unicode */
 		    unicode = PyUnicode_Decode(PyString_AS_STRING(temp),
 						   PyString_GET_SIZE(temp),
 					       NULL,
@@ -7244,7 +7240,7 @@ PyObject *PyUnicode_Format(PyObject *format,
 
 #ifdef __ILEC400__
 #pragma convert(850)
-#endif   
+#endif
 	    case 'i':
 	    case 'd':
 	    case 'u':
@@ -7259,8 +7255,6 @@ PyObject *PyUnicode_Format(PyObject *format,
 			goto onError;
 		    pbuf = PyUnicode_AS_UNICODE(temp);
 		    len = PyUnicode_GET_SIZE(temp);
-		    /* unbounded ints can always produce
-		       a sign character! */
 		    sign = 1;
 		}
 		else {
@@ -7269,8 +7263,7 @@ PyObject *PyUnicode_Format(PyObject *format,
 				    flags, prec, c, v);
 		    if (len < 0)
 			goto onError;
-		    /* only d conversion is signed */
-		    sign = c == 'd';
+		    sign = 1;
 		}
 		if (flags & F_ZERO)
 		    fill = '0';
@@ -7304,17 +7297,17 @@ PyObject *PyUnicode_Format(PyObject *format,
 	    default:
 #ifdef __ILEC400__
 #pragma convert(0)
-#endif   
+#endif
 		PyErr_Format(PyExc_ValueError,
 			     "unsupported format character '%c' (0x%x) "
 			     "at index %i",
-			     (31<=c && c<=126) ? (char)c : '?', 
+			     (31<=c && c<=126) ? (char)c : '?',
                              (int)c,
 			     (int)(fmt -1 - PyUnicode_AS_UNICODE(uformat)));
 		goto onError;
 #ifdef __ILEC400__
 #pragma convert(850)
-#endif   
+#endif
 	    }
 	    if (sign) {
 		if (*pbuf == '-' || *pbuf == '+') {
@@ -7389,7 +7382,7 @@ PyObject *PyUnicode_Format(PyObject *format,
 	    if (dict && (argidx < arglen) && c != '%') {
 #ifdef __ILEC400__
 #pragma convert(0)
-#endif   
+#endif
 		PyErr_SetString(PyExc_TypeError,
 				"not all arguments converted during string formatting");
 		goto onError;

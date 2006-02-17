@@ -173,28 +173,21 @@ os.environ["INCLUDE"]=("""%s:%s/as400:%s/include:%s/modules:%s/objects:\
           /qibm/proddata/ilec:/qibm/proddata/ilec/include:/qibm/include:/qibm/include/sys"""
           % (sourcePath, sourcePath, sourcePath, sourcePath,
              sourcePath, sourcePath, sourcePath, sourcePath))
+def buildDirectoryModules(modules, path, skip=None):
+             for module, source in modules.items():
+                          if skip and module in skip: continue
+                          crtCModule(module, path+source)
 
 # Create as/400 modules for each c program in Python distribution directories:
-for module, source in moduleMods.items():
-             # Skip these modules for now (getting compile errors)
-             #TODO: I can't find the source for XREADLINES. Is it a ghost?
-             if module in ['SRE', 'XREADLINES']: continue
-             crtCModule(module, path=sourcePath +'/modules/' +source)
-raise "happyfine"
+#TODO: I can't find the source for XREADLINES.  Is it a ghost?
 
-for module, source in objectMods.items():
-             if module in ['UNICODEOBJ','STRINGOBJE']: continue
-             crtCModule(module, path=sourcePath +'/objects/' +source)
-for module, source in parserMods.items():
-             crtCModule(module, path=sourcePath +'/parser/'  +source)
-for module, source in pythonMods.items():
-             if module in ['THREAD', 'FROZENMAIN']: continue
-             crtCModule(module, path=sourcePath +'/python/'  +source)
+buildDirectoryModules(modules=objectMods, path=sourcePath+'/objects/')#,skip=['UNICODEOBJ','STRINGOBJE'])
+buildDirectoryModules(modules=pythonMods, path=sourcePath+'/python/')#,skip=['THREAD', 'FROZENMAIN']
+buildDirectoryModules(modules=parserMods, path=sourcePath+'/parser/')
+buildDirectoryModules(modules=moduleMods, path=sourcePath+'/modules/',skip=['XREADLINES'])
+buildDirectoryModules(modules=as400Mods, path=sourcePath+'/as400/')
 ##TODO: Track down source for zlib! No source means this will fail! :-)
-for module, source in zlibMods.items():
-             crtCModule(module, path=sourcePath +'/zlib1.1.4/' +source)
-for module, source in as400Mods.items():
-             crtCModule(module, path=sourcePath +'/as400/'   +source)
+buildDirectoryModules(modules=zlibMods, path=sourcePath+'/zlib1.1.4/')
 
 # Create the "Python" service program
 #TODO: Remove this hack when dependent modules compile ok

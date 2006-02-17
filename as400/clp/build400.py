@@ -12,29 +12,43 @@ except:
                                        return OS400Call()
              os400 = OS400()
 
+#TODO: Only re-create if source is newer than object
 def execCmd(cmd):
              #TODO: There is a limit on length of strings printed to STDOUT. Find & Fix!
-             print "Getting reference\n", cmd[:80]
+             debug = 9
+             if debug:
+                          print "Executing command:\n"
+                          remain = cmd
+                          while remain:
+                                       print remain[:80]
+                                       remain = remain[80:]
              cmdRef = os400.Program("QCMDEXC", "*LIBL", (('c',2048), ('d',15,5)))
-             #print "Got ref. Executing"
              cmdRef(cmd, len(cmd))
-             #print "Executed"
 
 def crtCModule(module, path, lib=None, opt=30, inline="*ON *AUTO", dbg="*NONE", tgtRls="*CURRENT"):
              if not lib: lib=targetLibrary
-             execCmd("""CRTCMOD MODULE(%s/%s) OPTIMIZE(%s) INLINE(%s) DBGVIEW(%s) \
-                    TGTRLS(%s) SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) SRCSTMF('%s') \
-                    """ % (lib, module, opt, inline, dbg, tgtRls, path))
-def crtSrvPgm(srvPgm, modules=None, bndSrvPgm=None):
+             execCmd("""CRTCMOD MODULE(%s/%s) SRCSTMF('%s') OPTIMIZE(%s) INLINE(%s)  \
+                    DBGVIEW(%s) TGTRLS(%s) SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) \
+                    """ % (lib, module, path, opt, inline, dbg, tgtRls))
+def crtSrvPgm(srvPgm, modules=None, bndSrvPgm=None, lib=None, tgtRls="*CURRENT"):
+             if not lib: lib=targetLibrary
              if not modules: modules = srvPgm
-             execCmd = ("""CRTSRVPGM  SRVPGM(%s/%s) MODULE(%s/%s) EXPORT(*ALL) \
-                          BNDSRVPGM(%s/%s) TGTRLS(%s)"""
-                          % (lib, srvPgm, lib, modules, lib, bndSrvPgm))
+             bndSrvPgmTxt = ' '
+             if bndSrvPgm:
+                          bndSrvPgmTxt = 'BNDSRVPGM(%s)' % bndSrvPgm
+             modParm = ''
+             if not isinstance(modules, list): modules = [modules]
+             for module in modules:
+                          modParm += '%s/%s ' % (lib, module)
+             execCmd("""CRTSRVPGM  SRVPGM(%s/%s) MODULE(%s) EXPORT(*ALL) \
+                     %s TGTRLS(%s)"""
+                     % (lib, srvPgm, modParm, bndSrvPgmTxt, tgtRls))
 def crtCmd(cmd, pgm, text="", thdSafe="*YES"):
              lib, pySrcLib = targetLibrary, targetLibrary
              execCmd("""CRTCMD CMD(%s/%s) PGM(%s/%s) SRCFILE(%s/QCMDSRC) THDSAFE(%s) TEXT(%s)"""
              % (lib, cmd, lib, pgm, pySrcLib, thdSafe, text))
-def crtPgm(lib, pgm, srvPgm, tgtRls):
+def crtPgm(pgm, srvPgm, lib=None, tgtRls="*CURRENT" ):
+             if not lib: lib=targetLibrary
              execCmd("""CRTPGM PGM(%s/%s) BNDSRVPGM(%s/%s) ALWLIBUPD(*YES) TGTRLS(%s)"""
                       % (lib, pgm, lib, srvPgm, tgtRls))
 
@@ -58,7 +72,7 @@ moduleMods ={'ITERTOOLSM':'ITERTOOLSMODULE.C','CSV':'_CSV.C','RANDOM':'_RANDOMMO
              'TESTCAPIMO':'_TESTCAPIMODULE.C','GCMODULE':'GCMODULE.C','HOTSHOT':'_HOTSHOT.C',
              'DATETIMEMO':'DATETIMEMODULE.C'}
 objectMods = {'BOOLOBJECT':'BOOLOBJECT.C','BUFFEROBJE':'BUFFEROBJECT.C','CLASSOBJEC':'CLASSOBJECT.C',
-              'COBJECT':'OBJECTS/COBJECT.C','COMPLEXOBJ':'COMPLEXOBJECT.C','DICTOBJECT':'DICTOBJECT.C',
+              'COBJECT':'COBJECT.C','COMPLEXOBJ':'COMPLEXOBJECT.C','DICTOBJECT':'DICTOBJECT.C',
               'ENUMOBJECT':'ENUMOBJECT.C','FILEOBJECT':'FILEOBJECT.C','FLOATOBJEC':'FLOATOBJECT.C',
               'FRAMEOBJEC':'FRAMEOBJECT.C','FUNCOBJECT':'FUNCOBJECT.C','INTOBJECT':'INTOBJECT.C',
               'LISTOBJECT':'LISTOBJECT.C','LONGOBJECT':'LONGOBJECT.C','METHODOBJE':'METHODOBJECT.C',
@@ -72,7 +86,7 @@ parserMods = {'BITSET':'BITSET.C','FIRSTSETS':'FIRSTSETS.C','GRAMMAR':'GRAMMAR.C
               'PARSER':'PARSER.C','PARSETOK':'PARSETOK.C','PGEN':'PGEN.C','PRINTGRAMM':'PRINTGRAMMAR.C',
               'TOKENIZER':'TOKENIZER.C'}
 pythonMods = {'BLTINMODUL':'BLTINMODULE.C','CEVAL':'CEVAL.C','CODECS':'CODECS.C',
-             'COMPILE':'COMPILE.C',' ERRORS':'ERRORS.C','EXCEPTIONS':'EXCEPTIONS.C','FROZEN':'FROZEN.C',
+             'COMPILE':'COMPILE.C','ERRORS':'ERRORS.C','EXCEPTIONS':'EXCEPTIONS.C','FROZEN':'FROZEN.C',
              'FROZENMAIN':'FROZENMAIN.C','GETARGS':'GETARGS.C','GETCOMPILE':'GETCOMPILER.C',
              'GETCOPYRIG':'GETCOPYRIGHT.C','GETMTIME':'GETMTIME.C','GETPLATFOR':'GETPLATFORM.C',
              'GETVERSION':'GETVERSION.C','GRAMINIT':'GRAMINIT.C','IMPORT':'IMPORT.C','IMPORTDL':'IMPORTDL.C',
@@ -138,7 +152,7 @@ srvPgmMods2 = {'array':"arrayModul",'binascii':"binascii",'cmath':"cmathmodul",'
                'XREADLINES':"XREADLINES",'SHA':"SHAMODULE",'ZSYMTABLE':"SYMTABLEMO",
                'TESTCAPIMO':"TESTCAPIMO",'ZWEAKREF':"WEAKREF",'ZHOTSHOT':"HOTSHOT",
                'ITERTOOLS':"ITERTOOLSM",'ZCSV':"CSV",'ZRANDOM':"RANDOM",'ZDB':"ZDB"}
-pgms = {'PYTHON':"PYTHON",'PYTHONCMD':"PYTHON"}
+programs = {'PYTHON':"PYTHON",'PYTHONCMD':"PYTHON"}
 
 
 # Set the target library & release
@@ -166,25 +180,44 @@ for module, source in moduleMods.items():
              #TODO: I can't find the source for XREADLINES. Is it a ghost?
              if module in ['SRE', 'XREADLINES']: continue
              crtCModule(module, path=sourcePath +'/modules/' +source)
+raise "happyfine"
 
-for module, source in objectMods.items(): crtCModule(module, path=sourcePath +'/objects/' +source)
-for module, source in parserMods.items(): crtCModule(module, path=sourcePath +'/parser/'  +source)
-for module, source in pythonMods.items(): crtCModule(module, path=sourcePath +'/python/'  +source)
-for module, source in zlibMods.items():   crtCModule(module, path=sourcePath +'/zlib1.1.4/' +source)
-for module, source in as400Mods.items():  crtCModule(module, path=sourcePath +'/as400/'   +source)
+for module, source in objectMods.items():
+             if module in ['UNICODEOBJ','STRINGOBJE']: continue
+             crtCModule(module, path=sourcePath +'/objects/' +source)
+for module, source in parserMods.items():
+             crtCModule(module, path=sourcePath +'/parser/'  +source)
+for module, source in pythonMods.items():
+             if module in ['THREAD', 'FROZENMAIN']: continue
+             crtCModule(module, path=sourcePath +'/python/'  +source)
+##TODO: Track down source for zlib! No source means this will fail! :-)
+for module, source in zlibMods.items():
+             crtCModule(module, path=sourcePath +'/zlib1.1.4/' +source)
+for module, source in as400Mods.items():
+             crtCModule(module, path=sourcePath +'/as400/'   +source)
 
 # Create the "Python" service program
-crtSrvPgm(srvPgm="Python", module=modules, tgtRls=tgtRls)
+#TODO: Remove this hack when dependent modules compile ok
+##goodmods = []
+##for pymod in pythonSrvPgmMods:
+##             if pymod not in ('ABSTRACT', 'ACCELER', 'STRINGOBJE', 'THREAD',
+##                              'UNICODEOBJ', 'UNICODECTY'):
+##                          goodmods.append(pymod)
+##pythonSrvPgmMods = goodmods
+#end hack
+crtSrvPgm(srvPgm="Python", modules=pythonSrvPgmMods)
 
 # Create remaining service programs. These are simpler: usually 1 mod per svcpgm
-for pgm in srvPgms: crtSrvPgm(lib, pgm[0], modules=[1])
+for srvPgm, modules in srvPgms.items():
+             crtSrvPgm(srvPgm, modules, bndSrvPgm='Python')
 
-for program in srvPgmMods2:
-             crtSrvPgm(targetLibrary, srvPgm=program[1], module=program[2])
-for program in programs:
-             crtPgm(targetLibrary, pgm=program[1], srvPgm=program[2])
+for srvPgm, modules in srvPgmMods2.items():
+             crtSrvPgm(srvPgm=srvPgm, modules=modules, bndSrvPgm='Python')
+for pgm, bndSrvPgm in programs.items():
+             crtPgm(pgm=pgm, srvPgm=bndSrvPgm)
 
-crtPgm (targetLibrary, "python", "python", tgtRls)
-crtPgm (targetLibrary, "pythoncmd", "python", tgtRls)
+crtPgm (targetLibrary, "python", "python")
+crtPgm (targetLibrary, "pythoncmd", "python")
 
-crtCmd (lib, "Python", pgm="PythonCmd", text="Python", thdSafe="*YES")
+crtCmd ("Python", pgm="PythonCmd", text="Python", thdSafe="*YES")
+print "Build completed sucessfully"

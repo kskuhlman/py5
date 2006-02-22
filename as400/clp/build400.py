@@ -1,5 +1,8 @@
+#TODO: Build data area 'PYTHONHOME.' Must not have trailing slash
 from sys import stdin, stdout, argv, exit
 import os
+from os import stat
+from stat import *
 try: import os400
 except:
              print "Not running on as400. Faking calls"
@@ -27,22 +30,27 @@ def execCmd(cmd):
 
 def crtCModule(module, path, lib=None, opt=30, inline="*ON *AUTO", dbg="*NONE", tgtRls="*CURRENT"):
              if not lib: lib=targetLibrary
+             if opt < 30:
+                 dbg = "*SOURCE"
+                 inline = "*OFF"
              execCmd("""CRTCMOD MODULE(%s/%s) SRCSTMF('%s') OPTIMIZE(%s) INLINE(%s)  \
                     DBGVIEW(%s) TGTRLS(%s) SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) \
                     """ % (lib, module, path, opt, inline, dbg, tgtRls))
+
 def crtSrvPgm(srvPgm, modules=None, bndSrvPgm=None, lib=None, tgtRls="*CURRENT"):
              if not lib: lib=targetLibrary
              if not modules: modules = srvPgm
              bndSrvPgmTxt = ' '
              if bndSrvPgm:
-                          bndSrvPgmTxt = 'BNDSRVPGM(%s)' % bndSrvPgm
+                          bndSrvPgmTxt = 'BNDSRVPGM(%s/%s)' % (lib, bndSrvPgm)
              modParm = ''
              if not isinstance(modules, list): modules = [modules]
              for module in modules:
                           modParm += '%s/%s ' % (lib, module)
              execCmd("""CRTSRVPGM  SRVPGM(%s/%s) MODULE(%s) EXPORT(*ALL) \
-                     %s TGTRLS(%s)"""
+                     %s TGTRLS(%s) """
                      % (lib, srvPgm, modParm, bndSrvPgmTxt, tgtRls))
+                     #BNDDIR(QSYS/QC2LE QSYS/QUSAPIBD     )"""
 def crtCmd(cmd, pgm, text="", thdSafe="*YES"):
              lib, pySrcLib = targetLibrary, targetLibrary
              execCmd("""CRTCMD CMD(%s/%s) PGM(%s/%s) SRCFILE(%s/QCMDSRC) THDSAFE(%s) TEXT(%s)"""
@@ -71,17 +79,21 @@ moduleMods ={'ITERTOOLSM':'ITERTOOLSMODULE.C','CSV':'_CSV.C','RANDOM':'_RANDOMMO
              'WEAKREF':'_WEAKREF.C','XREADLINES':'XREADLINESMODULE.C','SYMTABLEMO':'SYMTABLEMODULE.C',
              'TESTCAPIMO':'_TESTCAPIMODULE.C','GCMODULE':'GCMODULE.C','HOTSHOT':'_HOTSHOT.C',
              'DATETIMEMO':'DATETIMEMODULE.C'}
-objectMods = {'BOOLOBJECT':'BOOLOBJECT.C','BUFFEROBJE':'BUFFEROBJECT.C','CLASSOBJEC':'CLASSOBJECT.C',
+objectMods = {'ABSTRACT':'ABSTRACT.C',
+              'BOOLOBJECT':'BOOLOBJECT.C','BUFFEROBJE':'BUFFEROBJECT.C','CLASSOBJEC':'CLASSOBJECT.C',
               'COBJECT':'COBJECT.C','COMPLEXOBJ':'COMPLEXOBJECT.C','DICTOBJECT':'DICTOBJECT.C',
               'ENUMOBJECT':'ENUMOBJECT.C','FILEOBJECT':'FILEOBJECT.C','FLOATOBJEC':'FLOATOBJECT.C',
               'FRAMEOBJEC':'FRAMEOBJECT.C','FUNCOBJECT':'FUNCOBJECT.C','INTOBJECT':'INTOBJECT.C',
               'LISTOBJECT':'LISTOBJECT.C','LONGOBJECT':'LONGOBJECT.C','METHODOBJE':'METHODOBJECT.C',
               'MODULEOBJE':'MODULEOBJECT.C','OBJECT':'OBJECT.C','RANGEOBJE':'RANGEOBJECT.C',
               'SLICEOBJE':'SLICEOBJECT.C','STRINGOBJE':'STRINGOBJECT.C','TUPLEOBJE':'TUPLEOBJECT.C',
-              'TYPEOBJE':'TYPEOBJECT.C','UNICODECT':'UNICODECTYPE.C','UNICODEOBJ':'UNICODEOBJECT.C',
+              'TYPEOBJE':'TYPEOBJECT.C','UNICODECTY':'UNICODECTYPE.C','UNICODEOBJ':'UNICODEOBJECT.C',
               'CELLOBJECT':'CELLOBJECT.C','WEAKREFOBJ':'WEAKREFOBJECT.C','STRUCTSEQ':'STRUCTSEQ.C',
-              'DESCROBJEC':'DESCROBJECT.C','ITEROBJECT':'ITEROBJECT.C','OBMALLOC':'OBMALLOC.C'}
-parserMods = {'BITSET':'BITSET.C','FIRSTSETS':'FIRSTSETS.C','GRAMMAR':'GRAMMAR.C','GRAMMAR1':'GRAMMAR1.C',
+              'DESCROBJEC':'DESCROBJECT.C','ITEROBJECT':'ITEROBJECT.C','OBMALLOC':'OBMALLOC.C',
+              #TODO: This is new with v2.4. Document & add to clps
+              'SETOBJECT':'SETOBJECT.C','GENOBJECT':'GENOBJECT.C'}
+parserMods = {                        'ACCELER':'ACCELER.C',
+              'BITSET':'BITSET.C','FIRSTSETS':'FIRSTSETS.C','GRAMMAR':'GRAMMAR.C','GRAMMAR1':'GRAMMAR1.C',
               'LISTNODE':'LISTNODE.C','METAGRAMMA':'METAGRAMMAR.C','MYREADLINE':'MYREADLINE.C','NODE':'NODE.C',
               'PARSER':'PARSER.C','PARSETOK':'PARSETOK.C','PGEN':'PGEN.C','PRINTGRAMM':'PRINTGRAMMAR.C',
               'TOKENIZER':'TOKENIZER.C'}
@@ -93,7 +105,9 @@ pythonMods = {'BLTINMODUL':'BLTINMODULE.C','CEVAL':'CEVAL.C','CODECS':'CODECS.C'
              'MARSHAL':'MARSHAL.C','MODSUPPORT':'MODSUPPORT.C','MYSNPRINTF':'MYSNPRINTF.C','MYSTRTOUL':'MYSTRTOUL.C',
              'PYFPE':'PYFPE.C','PYSTATE':'PYSTATE.C','PYTHONRUN':'PYTHONRUN.C','STRDUP':'STRDUP.C',
              'STRUCTMEMB':'STRUCTMEMBER.C','SYSMODULE':'SYSMODULE.C','THREAD':'THREAD.C','TRACEBACK':'TRACEBACK.C',
-             'FUTURE':'FUTURE.C','SYMTABLE':'SYMTABLE.C','GETOPT':'GETOPT.C'}
+             'FUTURE':'FUTURE.C','SYMTABLE':'SYMTABLE.C','GETOPT':'GETOPT.C',
+             #TODO: Looks like this was added with 2.4. Put in notes & clp builder
+             'PYSTRTOD':'PYSTRTOD.C'}
 #TODO: First item had 'modules' instead of 'zlib' for path. odd!
 zlibMods = {'ZLIBMODULE':'ZLIBMODULE.C','Z_ADLER32':'ADLER32.C',
             #TODO: Compile this next one with TERASPACE(*YES *TSIFC)
@@ -105,7 +119,9 @@ as400Mods = {'FILE400MOD':'FILE400MODULE.C',
              #TODO':  ALWAYS COMPILE THESE NEXT 2 WITH NO OPTIMIZE */
              'ZOS400':'_OS400.C','AS400MISC':'AS400MISC.C',
              'DYNLOAD_AS':'DYNLOAD_AS400.C','PYTHONCMD':'PYTHONCMD.C','ZDB':'_DB.C',
-             'SGMLMODULE':'SGMLMODULE.C','ZDATE':'_DATE.C'}
+             'SGMLMODULE':'SGMLMODULE.C','ZDATE':'_DATE.C',
+             #TODO: I added this.  Document & add to CLPs
+             'ISATTY':'isatty.c'}
 
 # These are all the modules that are required to build the "python" service program
 pythonSrvPgmMods = ["ABSTRACT", "ACCELER", "AS400MISC", "BITSET", "BLTINMODUL",
@@ -113,6 +129,7 @@ pythonSrvPgmMods = ["ABSTRACT", "ACCELER", "AS400MISC", "BITSET", "BLTINMODUL",
              "COMPILE", "COMPLEXOBJ", "CODECSMODU", "CONFIG", "CELLOBJECT", "DESCROBJEC",
              "DICTOBJECT", "DYNLOAD_AS", "ENUMOBJECT", "ERRORS", "EXCEPTIONS",
              "FILEOBJECT", "FIRSTSETS", "FLOATOBJEC", "FRAMEOBJEC", "FROZEN",
+             "FROZENMAIN",
              "FUTURE", "FUNCOBJECT", "GETARGS", "GETBUILDIN", "GETCOMPILE",
              "GETCOPYRIG", "GETMTIME", "GETPATH", "GETPLATFOR", "GETOPT",
              "GETVERSION", "GRAMINIT", "GRAMMAR", "GRAMMAR1", "IMPORT",
@@ -124,93 +141,103 @@ pythonSrvPgmMods = ["ABSTRACT", "ACCELER", "AS400MISC", "BITSET", "BLTINMODUL",
              "PYTHONRUN", "RANGEOBJE","SIGNALMODU", "SLICEOBJE", "STRDUP",
              "STRINGOBJE", "STRUCTMEMB", "SYSMODULE", "THREAD", "TOKENIZER",
              "TRACEBACK", "TUPLEOBJE", "TYPEOBJE", "GCMODULE", "STRUCTSEQ",
-             "SYMTABLE", "WEAKREFOBJ", "UNICODEOBJ", "UNICODECTY", "ZIPIMPORT"]
+             "SYMTABLE", "WEAKREFOBJ", "UNICODEOBJ", "UNICODECTY", "ZIPIMPORT",
+             #TODO: These are new with 2.4. Document & add to clps
+             "PYSTRTOD", "SETOBJECT", "GENOBJECT", "ISATTY"]
+
 
 # The service programs to create, and the modules they depend on.
 #TODO: It would be clearer if this was done before creating the Python srvpgm above
 srvPgms = {'BINASCII':"BINASCII",'CMATH':"CMATHMODUL",'CPICKLE':"CPICKLE",
            'CSTRINGIO':"CSTRINGIO",'ZDATE':"ZDATE",'DATETIME':"DATETIMEMO",
            'ERRNO':"ERRNOMODUL",'FCNTL':"FCNTLMODUL",'IMAGEOP':"IMAGEOP",
-           'MATH':"MATHMODULE",'MD5':"MD5*",'FILE400':"FILE400MOD",'ZOS400':"ZOS400",
+           'MATH':"MATHMODULE",'MD5':["MD5C","MD5MODULE"],'FILE400':"FILE400MOD",'ZOS400':"ZOS400",
            'PARSER':"PARSERMODU",'PURE':"PUREMODULE",'SELECT':"SELECTMODU",
            'SGML':"SGMLMODULE",'ZSOCKET':"SOCKETMODU",'ZSRE':"SRE",'STROP':"STROPMODUL",
-           'STRUCT':"STRUCTMODU",'THREAD':"THREADMODU",'TIME':"TIMEMODULE",
-           'TIMING':"TIMINGMODU",'UNICODEDAT':"UNICODEDAT",'ZLIB':"ZLIBMODULE &LIB/Z_*",
+           'STRUCT':"STRUCTMODU",'TIME':"TIMEMODULE",'thread':'threadmodu',
+           'TIMING':"TIMINGMODU",'UNICODEDAT':"UNICODEDAT",'ZLIB':"ZLIBMODULE Z_*",
            'XREADLINES':"XREADLINES",'SHA':"SHAMODULE",'ZSYMTABLE':"SYMTABLEMO",
            'TESTCAPIMO':"TESTCAPIMO",'ZWEAKREF':"WEAKREF",'ZHOTSHOT':"HOTSHOT",
            'ITERTOOLS':"ITERTOOLSM",'ZCSV':"CSV",'ZRANDOM':"RANDOM",'ZDB':"ZDB"}
 
 #def crtCmd(lib, cmd, pgm, text=None, thdSafe="*NO"):
 srvPgmMods2 = {'array':"arrayModul",'binascii':"binascii",'cmath':"cmathmodul",'cpickle':"cpickle",
-               'cstringio':"cstringio",'zdate':"zdate",'datetime':"datetimemo",'errno':"errnomodul",
-               'fcntl':"fcntlmodul",'imageop':"imageop",'math':"mathmodule",'md5':"md5",
+               'cstringio':"cstringio",'zdate':"zdate",'DATETIME':"datetimemo",'errno':"errnomodul",
+               'fcntl':"fcntlmodul",'imageop':"imageop",'math':"mathmodule",'MD5':["MD5C","MD5MODULE"],
                'file400':"file400mod",'zos400':"zos400",'parser':"parsermodu",
                'pure':"puremodule",'select':"selectmodu",'sgml':"sgmlmodule",
                'zsocket':"socketmodu",'zsre':"sre",'strop':"stropmodul",
-               'struct':"structmod",'thread':"threadmodu",'time':"timemodule",
+               'struct':"structmodu",'time':"timemodule",'thread':"threadmodu",
                'TIMING':"TIMINGMODU",'UNICODEDAT':"UNICODEDAT",'ZLIB':"ZLIBMODULE",
                'XREADLINES':"XREADLINES",'SHA':"SHAMODULE",'ZSYMTABLE':"SYMTABLEMO",
                'TESTCAPIMO':"TESTCAPIMO",'ZWEAKREF':"WEAKREF",'ZHOTSHOT':"HOTSHOT",
                'ITERTOOLS':"ITERTOOLSM",'ZCSV':"CSV",'ZRANDOM':"RANDOM",'ZDB':"ZDB"}
+              #TODO: re-add:                       to dict above
 programs = {'PYTHON':"PYTHON",'PYTHONCMD':"PYTHON"}
 
+def buildDirectoryModules(modules, path, skip=None):
+             for module, source in modules.items():
+                if skip and module in skip:
+                    print "Skipping %s cause I was told to" % module
+                    continue
+                fullSrcPath = path +source
+                try: modTime = os.stat('/qsys.lib/%s.lib/%s.module' % (targetLibrary, module))[ST_MTIME]
+                except:  modTime = 0
+                srcTime = os.stat(fullSrcPath)[ST_MTIME]
+                if srcTime < modTime:
+                    print "Source hasn't changed. Skipping " +fullSrcPath
+                    continue
+                crtCModule(module, path+source, opt=optimize)
 
 # Set the target library & release
 if len(argv) == 3:
              targetLibrary, tgtRls = argv[1], argv[2]
 else:
              targetLibrary, tgtRls = 'Python241', '*CURRENT'
-
-#def setEnvVar(var=None, value=None):
-#             os.environ["ORACLE_HOME"]="/opt/app/ora/"
+optimize = 10
 
 #TODO: Move the source to a reasonable path!
 #sourcePath = '/source/python2.4.1'
 sourcePath = '/home/E11571/python-2.4.1'
 
-os.environ["INCLUDE"]=("""%s:%s/as400:%s/include:%s/modules:%s/objects:\
+os.environ["INCLUDE"]=("""%s/..:%s:%s/as400:%s/include:%s/modules:%s/objects:\
           %s/parser:%s/python:%s/zlib1.1.4:\
-          /qibm/proddata/ilec:/qibm/proddata/ilec/include:/qibm/include:/qibm/include/sys"""
-          % (sourcePath, sourcePath, sourcePath, sourcePath,
+          """
+          % (sourcePath, sourcePath, sourcePath, sourcePath, sourcePath,
              sourcePath, sourcePath, sourcePath, sourcePath))
-def buildDirectoryModules(modules, path, skip=None):
-             for module, source in modules.items():
-                          if skip and module in skip: continue
-                          crtCModule(module, path+source)
+    #     /qibm/proddata/ilec:/qibm/proddata/ilec/include:/qibm/include:/qibm/include/sys"""
 
 # Create as/400 modules for each c program in Python distribution directories:
-#TODO: I can't find the source for XREADLINES.  Is it a ghost?
-
 buildDirectoryModules(modules=objectMods, path=sourcePath+'/objects/')#,skip=['UNICODEOBJ','STRINGOBJE'])
-buildDirectoryModules(modules=pythonMods, path=sourcePath+'/python/')#,skip=['THREAD', 'FROZENMAIN']
+buildDirectoryModules(modules=pythonMods, path=sourcePath+'/python/')#,skip=['THREAD']) #, 'FROZENMAIN']
 buildDirectoryModules(modules=parserMods, path=sourcePath+'/parser/')
+#TODO: I can't find the source for XREADLINES.  Is it a ghost?
 buildDirectoryModules(modules=moduleMods, path=sourcePath+'/modules/',skip=['XREADLINES'])
 buildDirectoryModules(modules=as400Mods, path=sourcePath+'/as400/')
 ##TODO: Track down source for zlib! No source means this will fail! :-)
-buildDirectoryModules(modules=zlibMods, path=sourcePath+'/zlib1.1.4/')
+###buildDirectoryModules(modules=zlibMods, path=sourcePath+'/zlib1.1.4/')
 
 # Create the "Python" service program
-#TODO: Remove this hack when dependent modules compile ok
-##goodmods = []
-##for pymod in pythonSrvPgmMods:
-##             if pymod not in ('ABSTRACT', 'ACCELER', 'STRINGOBJE', 'THREAD',
-##                              'UNICODEOBJ', 'UNICODECTY'):
-##                          goodmods.append(pymod)
-##pythonSrvPgmMods = goodmods
-#end hack
 crtSrvPgm(srvPgm="Python", modules=pythonSrvPgmMods)
 
 # Create remaining service programs. These are simpler: usually 1 mod per svcpgm
 for srvPgm, modules in srvPgms.items():
+  # Can't find source for XREADLINES & need to compile zlib in from fresh source
+             if srvPgm in ['XREADLINES','ZLIB', 'DATETIME']:
+                    print 'Skipping creation of service program %s' % srvPgm
+                    continue
              crtSrvPgm(srvPgm, modules, bndSrvPgm='Python')
 
+print 'Starting second round of service program creates'
+print 'Not sure why.. need to look into this! :-)'
 for srvPgm, modules in srvPgmMods2.items():
+             if srvPgm in ['XREADLINES','ZLIB','DATETIME']:
+                    print '2 Skipping creation of service program %s' % srvPgm
+                    continue
              crtSrvPgm(srvPgm=srvPgm, modules=modules, bndSrvPgm='Python')
+
 for pgm, bndSrvPgm in programs.items():
              crtPgm(pgm=pgm, srvPgm=bndSrvPgm)
-
-crtPgm (targetLibrary, "python", "python")
-crtPgm (targetLibrary, "pythoncmd", "python")
 
 crtCmd ("Python", pgm="PythonCmd", text="Python", thdSafe="*YES")
 print "Build completed sucessfully"

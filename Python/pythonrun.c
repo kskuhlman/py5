@@ -13,13 +13,7 @@
 #include "eval.h"
 #include "marshal.h"
 
-#ifdef __ILEC400__
-#include <qusrjobi.h>
-#endif
-
-#ifdef HAVE_SIGNAL_H
 #include <signal.h>
-#endif
 
 #ifdef HAVE_LANGINFO_H
 #include <locale.h>

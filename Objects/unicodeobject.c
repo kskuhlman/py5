@@ -529,11 +529,8 @@ PyObject *PyUnicode_Decode(const char *s,
     if (encoding == NULL)
 	encoding = PyUnicode_GetDefaultEncoding();
 
-#ifdef __ILEC400__
-/* ebcdic is default codepage */
     if (strcmp(encoding, "ebcdic") == 0)
         return PyUnicode_DecodeEbcdic(s, size, errors);
-#endif
     /* Shortcuts for common default encodings */
     if (strcmp(encoding, "utf-8") == 0)
         return PyUnicode_DecodeUTF8(s, size, errors);
@@ -605,6 +602,30 @@ PyObject *PyUnicode_Encode(const Py_UNICODE *s,
     v = PyUnicode_AsEncodedString(unicode, encoding, errors);
     Py_DECREF(unicode);
     return v;
+}
+
+PyObject *PyUnicode_AsEncodedObject(PyObject *unicode,
+                                    const char *encoding,
+                                    const char *errors)
+{
+    PyObject *v;
+
+    if (!PyUnicode_Check(unicode)) {
+        PyErr_BadArgument();
+        goto onError;
+    }
+
+    if (encoding == NULL)
+	encoding = PyUnicode_GetDefaultEncoding();
+
+    /* Encode via the codec registry */
+    v = PyCodec_Encode(unicode, encoding, errors);
+    if (v == NULL)
+        goto onError;
+    return v;
+
+ onError:
+    return NULL;
 }
 
 #ifdef __ILEC400__
@@ -6792,9 +6813,8 @@ formatint(Py_UNICODE *buf,
 #else
     char fmt[64]; /* plenty big enough! */
 #endif
-    long x;
-    /* KSK: sign wasn't defined? */
     char *sign;
+    long x;
 
     x = PyInt_AsLong(v);
     if (x == -1 && PyErr_Occurred())

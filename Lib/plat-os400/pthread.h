@@ -364,8 +364,13 @@ void *pthread_getspecific(pthread_key_t key);
   //                       void (*destructor)(void *));
 #else                                                           /*@B3A*/
 <<<<<<< HEAD
+<<<<<<< HEAD
   //int pthread_key_create(pthread_key_t *__ptr64 key,
   //            void (*__ptr64 destructor)(void *__ptr64));       /*@B3A*/
+=======
+  int pthread_key_create(pthread_key_t *__ptr64 key,
+              void (*__ptr64 destructor)(void *__ptr64));       /*@B3A*/
+>>>>>>> fe59fc7... Added "pthread.h"--compile was failing on an function we don't use.  So I just copied the standard header & removed the offending line.
 =======
   int pthread_key_create(pthread_key_t *__ptr64 key,
               void (*__ptr64 destructor)(void *__ptr64));       /*@B3A*/

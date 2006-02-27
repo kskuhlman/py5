@@ -841,27 +841,6 @@ PyAPI_FUNC(PyObject*) PyUnicode_EncodeASCII(
     const char *errors		/* error handling */
     );
 
-#ifdef __ILEC400__
-/* --- Ebcdic current codepage  ----------------------------------------- 
-
-*/
-
-extern DL_IMPORT(PyObject*) PyUnicode_DecodeEbcdic(
-    const char *string,     /* Ebcdic encoded string */
-    int length,         /* size of string */
-    const char *errors      /* error handling */
-    );
-
-extern DL_IMPORT(PyObject*) PyUnicode_AsEbcdicString(
-    PyObject *unicode       /* Unicode object */
-    );
-
-extern DL_IMPORT(PyObject*) PyUnicode_EncodeEbcdic(
-    const Py_UNICODE *data,     /* Unicode char buffer */
-    int length,         /* Number of Py_UNICODE chars to encode */
-    const char *errors      /* error handling */
-    );
-#endif
 /* --- Character Map Codecs ----------------------------------------------- 
 
    This codec uses mappings to encode and decode characters. 

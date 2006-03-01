@@ -1,4 +1,7 @@
 /* pyconfig.h for AS/400  */
+// Most iSeries installations don't have configure & make installed, so
+//  including this as part of the standard distrib.  If you do have configure
+//  installed, delete this file & rebuild from pyconfig.h.in
 
 
 #ifndef Py_PYCONFIG_H
@@ -450,7 +453,7 @@
 #define HAVE_STDDEF_H
 
 /* Define to 1 if you have the <stdint.h> header file. */
-#undef HAVE_STDINT_H
+#define HAVE_STDINT_H
 
 /* Define to 1 if you have the <stdlib.h> header file. */
 #define HAVE_STDLIB_H

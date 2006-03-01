@@ -700,6 +700,9 @@
 /* Define if you want to have a Unicode type. */
 #undef Py_USING_UNICODE
 
+/* Define if you want to support codepages other than ascii (eg, EBCDIC) */
+#undef USE_CODEPAGES
+
 /* Define as the return type of signal handlers (`int' or `void'). */
 #undef RETSIGTYPE
 

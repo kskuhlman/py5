@@ -1,6 +1,6 @@
 #ifndef Py_TOKENIZER_H
 #define Py_TOKENIZER_H
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 #include <iconv.h>
 #endif
 #ifdef __cplusplus
@@ -55,7 +55,7 @@ struct tok_state {
 #endif
 	const char* enc;
 	const char* str;
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 	char *tmpbuf;	/* temp buffer */
 	int tmpbufsize;
 	iconv_t cdto;	/* conversion descriptor to us*/

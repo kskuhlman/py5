@@ -9,8 +9,11 @@
 
 #include "tokenizer.h"
 #include "errcode.h"
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 #include <iconv.h>
+#endif
+
+#ifdef __ILEC400__
 #include <as400misc.h>
 #endif
 
@@ -109,7 +112,7 @@ char *_PyParser_TokenNames[] = {
 static struct tok_state *
 tok_new(void)
 {
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 	char fromcode1[33] = "IBMCCSID000000000101";
 	char tocode1[33] = "IBMCCSID00037";
 	char fromcode2[33] = "IBMCCSID000370000101";
@@ -144,7 +147,7 @@ tok_new(void)
 	tok->decoding_readline = NULL;
 	tok->decoding_buffer = NULL;
 #endif
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 	/* open convertion descriptors */
 	tok->tmpbuf =NULL;
 	tok->tmpbufsize = 0;
@@ -158,7 +161,7 @@ tok_new(void)
 	return tok;
 }
 
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 void
 ConvertString(register struct tok_state *tok, char cvttype, char *s, int ssize)
 {
@@ -482,7 +485,7 @@ decoding_fgets(char *s, int size, struct tok_state *tok)
 			break;
 		} else if (tok->decoding_state > 0) {
 			/* We want a 'raw' read. */
-			line = Py_UniversalNewlineFgets(s, size,
+			line = Py_UniversalNewlineFgets(s, size, 
 							tok->fp, NULL);
 			warn = 1;
 			break;
@@ -500,9 +503,8 @@ decoding_fgets(char *s, int size, struct tok_state *tok)
 			return error_ret(tok);
 		}
 	}
-#ifndef __ILEC400__
 #ifndef PGEN
-#ifndef __MVS__ /* not applicable to EBCDIC contexts */
+#ifndef USE_CODEPAGES  /* not applicable to EBCDIC contexts */
 	if (warn && line && !tok->issued_encoding_warning && !tok->encoding) {
 		unsigned char *c;
 		for (c = (unsigned char *)line; *c; c++)
@@ -511,16 +513,15 @@ decoding_fgets(char *s, int size, struct tok_state *tok)
 				break;
 			}
 	}
-#endif
 	if (badchar) {
 		char buf[500];
 		/* Need to add 1 to the line number, since this line
 		   has not been counted, yet.  */
-		sprintf(buf,
+		sprintf(buf, 
 			"Non-ASCII character '\\x%.2x' "
 			"in file %.200s on line %i, "
 			"but no encoding declared; "
-			"see http://www.python.org/peps/pep-0263.html for details",
+			"see http://www.python.org/peps/pep-0263.html for details", 
 			badchar, tok->filename, tok->lineno + 1);
 		/* We don't use PyErr_WarnExplicit() here because
 		   printing the line in question to e.g. a log file
@@ -656,7 +657,7 @@ PyTokenizer_FromString(const char *str)
 	struct tok_state *tok = tok_new();
 	if (tok == NULL)
 		return NULL;
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 	if ((tok->buf = PyMem_NEW(char, strlen(str) + 1)) == NULL) {
 		PyMem_DEL(tok);
 		return NULL;
@@ -687,7 +688,7 @@ PyTokenizer_FromFile(FILE *fp, char *ps1, char *ps2)
 		PyMem_DEL(tok);
 		return NULL;
 	}
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 	if ((tok->tmpbuf = PyMem_NEW(char, BUFSIZ + 1)) == NULL) {
 		PyMem_DEL(tok);
 		return NULL;
@@ -707,7 +708,7 @@ PyTokenizer_FromFile(FILE *fp, char *ps1, char *ps2)
 void
 PyTokenizer_Free(struct tok_state *tok)
 {
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 	if (tok->tmpbuf != NULL)
 		PyMem_DEL(tok->tmpbuf);
 	/* close convertion descriptors */
@@ -813,7 +814,7 @@ tok_nextc(register struct tok_state *tok)
 		}
 		if (tok->prompt != NULL) {
 			char *new = PyOS_Readline(stdin, stdout, tok->prompt);
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 			ConvertString(tok, 't', new, strlen(new));
 #endif
 			if (tok->nextprompt != NULL)
@@ -865,7 +866,7 @@ tok_nextc(register struct tok_state *tok)
 			int cur = 0;
 			char *pt;
 			if (tok->start == NULL) {
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 				if (tok->tmpbuf == NULL) {
 					tok->tmpbuf = PyMem_NEW(char, BUFSIZ);
 					tok->done = E_NOMEM;
@@ -886,7 +887,7 @@ tok_nextc(register struct tok_state *tok)
 					done = 1;
 				}
 				else {
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 					ConvertString(tok, 't', tok->buf, strlen(tok->buf));
 #endif
 					tok->done = E_OK;
@@ -929,7 +930,7 @@ tok_nextc(register struct tok_state *tok)
 					   fake one */
 					strcpy(tok->inp, "\n");
 				}
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 				else {
 					/* convert new ccsid 037  */
 					ConvertString(tok, 't', tok->inp, strlen(tok->inp));
@@ -1276,7 +1277,7 @@ tok_get(register struct tok_state *tok, char **p_start, char **p_end)
 		} while (c != EOF && c != '\n' &&
 			 tp - cbuf + 1 < sizeof(cbuf));
 		*tp = '\0';
-		for (cp = tabforms;
+		for (cp = tabforms; 
 		     cp < tabforms + sizeof(tabforms)/sizeof(tabforms[0]);
 		     cp++) {
 			if ((tp = strstr(cbuf, *cp))) {
@@ -1301,7 +1302,7 @@ tok_get(register struct tok_state *tok, char **p_start, char **p_end)
 	}
 	
 	/* Identifier (most frequent token!) */
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 	if (isalpha37(c) || c == '_') {
 #else	  
 	if (isalpha(c) || c == '_') {
@@ -1323,7 +1324,7 @@ tok_get(register struct tok_state *tok, char **p_start, char **p_end)
 				goto letter_quote;
 			break;
 		}
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 		while (isalnum37(c) || c == '_') {
 #else	  
 		while (isalnum(c) || c == '_') {
@@ -1460,7 +1461,7 @@ tok_get(register struct tok_state *tok, char **p_start, char **p_end)
 		int quote = c;
 		int triple = 0;
 		int tripcount = 0;
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 		int cd_size;
 #endif		
 		for (;;) {
@@ -1510,7 +1511,7 @@ tok_get(register struct tok_state *tok, char **p_start, char **p_end)
 		}
 		*p_start = tok->start;
 		*p_end = tok->cur;
-#ifdef __ILEC400__
+#ifdef USE_CODEPAGES
 		/* convert strings back to current codepage */
 		cd_size = (tok->cur - tok->start) - 2;
 		if (cd_size > 0) {

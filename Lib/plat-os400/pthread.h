@@ -363,8 +363,8 @@ void *pthread_getspecific(pthread_key_t key);
   //int pthread_key_create(pthread_key_t *key,
   //                       void (*destructor)(void *));
 #else                                                           /*@B3A*/
-  int pthread_key_create(pthread_key_t *__ptr64 key,
-              void (*__ptr64 destructor)(void *__ptr64));       /*@B3A*/
+  //int pthread_key_create(pthread_key_t *__ptr64 key,
+  //            void (*__ptr64 destructor)(void *__ptr64));       /*@B3A*/
   #pragma map(pthread_key_create, "pthread_key_create_ts64") /*@B1A@B3M*/
 #endif                                                          /*@B3A*/
 int pthread_setspecific(pthread_key_t key, const void *value);

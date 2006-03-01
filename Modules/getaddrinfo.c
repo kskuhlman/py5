@@ -359,11 +359,7 @@ getaddrinfo(const char*hostname, const char*servname,
 				fprintf(stderr, "panic!\n");
 				break;
 			}
-#ifdef __ILEC400__
 			if ((sp = getservbyname((char*)servname, proto)) == NULL)
-#else
-			if ((sp = getservbyname(servname, proto)) == NULL)
-#endif
 				ERR(EAI_SERVICE);
 			port = sp->s_port;
 			if (pai->ai_socktype == GAI_ANY) {

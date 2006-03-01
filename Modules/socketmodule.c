@@ -194,7 +194,7 @@ shutdown(how) -- shut down traffic in one or both directions\n\
    functions are declared correctly if compiling with
    MIPSPro 7.x in ANSI C mode (default) */
 
-/* XXX Using _SGIAPI is the wrong thing,
+/* XXX Using _SGIAPI is the wrong thing, 
    but I don't know what the right thing is. */
 #undef _SGIAPI /* to avoid warning */
 #define _SGIAPI 1
@@ -212,8 +212,8 @@ shutdown(how) -- shut down traffic in one or both directions\n\
 #include <netdb.h>
 #endif
 
-/* Irix 6.5 fails to define this variable at all. This is needed
-   for both GCC and SGI's compiler. I'd say that the SGI headers
+/* Irix 6.5 fails to define this variable at all. This is needed 
+   for both GCC and SGI's compiler. I'd say that the SGI headers 
    are just busted. */
 #if defined(__sgi) && !defined(INET_ADDRSTRLEN)
 #define INET_ADDRSTRLEN 16
@@ -1108,10 +1108,10 @@ getsockaddrarg(PySocketSockObject *s, PyObject *args,
 				args->ob_type->tp_name);
 			return 0;
 		}
-		if (!PyArg_ParseTuple(args, "eti:getsockaddrarg",
+		if (!PyArg_ParseTuple(args, "eti:getsockaddrarg", 
 				      "idna", &host, &port))
 			return 0;
-                result = setipaddr(host, (struct sockaddr *)addr,
+                result = setipaddr(host, (struct sockaddr *)addr, 
                                    sizeof(*addr),  AF_INET);
                 PyMem_Free(host);
                 if (result < 0)
@@ -1131,12 +1131,12 @@ getsockaddrarg(PySocketSockObject *s, PyObject *args,
 		int port, flowinfo, scope_id, result;
  		addr = (struct sockaddr_in6*)&(s->sock_addr).in6;
 		flowinfo = scope_id = 0;
-		if (!PyArg_ParseTuple(args, "eti|ii",
+		if (!PyArg_ParseTuple(args, "eti|ii", 
 				      "idna", &host, &port, &flowinfo,
 				      &scope_id)) {
 			return 0;
 		}
-                result = setipaddr(host, (struct sockaddr *)addr,
+                result = setipaddr(host, (struct sockaddr *)addr,  
                                    sizeof(*addr), AF_INET6);
                 PyMem_Free(host);
                 if (result < 0)
@@ -1726,7 +1726,7 @@ internal_connect(PySocketSockObject *s, struct sockaddr *addr, int addrlen,
 					int res_size = sizeof res;
 					/* It must be in the exception set */
 					assert(FD_ISSET(s->sock_fd, &fds_exc));
-					if (0 == getsockopt(s->sock_fd, SOL_SOCKET, SO_ERROR,
+					if (0 == getsockopt(s->sock_fd, SOL_SOCKET, SO_ERROR, 
 					                    (char *)&res, &res_size))
 						/* getsockopt also clears WSAGetLastError,
 						   so reset it back. */
@@ -3318,7 +3318,7 @@ socket_inet_pton(PyObject *self, PyObject *args)
 				"can't use AF_INET6, IPv6 is disabled");
 		return NULL;
 	}
-#endif
+#endif 
 
 	retval = inet_pton(af, ip, packed);
 	if (retval < 0) {
@@ -3437,7 +3437,7 @@ socket_getaddrinfo(PyObject *self, PyObject *args)
 	} else if (PyString_Check(hobj)) {
 		hptr = PyString_AsString(hobj);
 	} else {
-		PyErr_SetString(PyExc_TypeError,
+		PyErr_SetString(PyExc_TypeError, 
 				"getaddrinfo() argument 1 must be string or None");
 		return NULL;
 	}
@@ -4642,11 +4642,7 @@ inet_pton(int af, const char *src, void *dst)
 {
 	if (af == AF_INET) {
 		long packed_addr;
-#ifdef __ILEC400__
-        packed_addr = inet_addr((char*)src);
-#else
-        packed_addr = inet_addr(src);
-#endif
+		packed_addr = inet_addr((char*)src);
 		if (packed_addr == INADDR_NONE)
 			return 0;
 		memcpy(dst, &packed_addr, 4);

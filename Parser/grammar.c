@@ -5,7 +5,6 @@
 #include "pgenheaders.h"
 
 #include <ctype.h>
-#include <string.h>
 
 #include "token.h"
 #include "grammar.h"

@@ -195,7 +195,7 @@ translabel(grammar *g, label *lb)
 				name_len = p - src;
 			else
 				name_len = strlen(src);
-			dest = malloc(name_len + 1);
+			dest = (char *)malloc(name_len + 1);
 			strncpy(dest, src, name_len);
 			dest[name_len] = '\0';
 			free(lb->lb_str);

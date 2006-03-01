@@ -1,4 +1,5 @@
 #TODO: Build data area 'PYTHONHOME.' Must not have trailing slash
+#TODO: Note, lib dir currently used is ~/py241/lib. (cp issues)
 from sys import stdin, stdout, argv, exit
 import os
 from os import stat
@@ -28,14 +29,24 @@ def execCmd(cmd):
              cmdRef = os400.Program("QCMDEXC", "*LIBL", (('c',2048), ('d',15,5)))
              cmdRef(cmd, len(cmd))
 
-def crtCModule(module, path, lib=None, opt=30, inline="*ON *AUTO", dbg="*NONE", tgtRls="*CURRENT"):
+def crtCModule(module, path, lib=None, incDir='', opt=30, inline="*ON *AUTO", dbg="*NONE", tgtRls="*CURRENT"):
              if not lib: lib=targetLibrary
              if opt < 30:
                  dbg = "*SOURCE"
                  inline = "*OFF"
-             execCmd("""CRTCMOD MODULE(%s/%s) SRCSTMF('%s') OPTIMIZE(%s) INLINE(%s)  \
-                    DBGVIEW(%s) TGTRLS(%s) SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) \
-                    """ % (lib, module, path, opt, inline, dbg, tgtRls))
+             dataModel = '*LLP64'
+             if module in ['ERRORS', 'MATHMODULE', 'FILEOBJECT', 'DATETIMEMO', 'IMPORT',
+                           'TOKENIZER', 'DATETIMEMO', 'SOCKETMODU', 'POSIXMODUL', 'TIMEMODULE',
+                           'AS400MISC', 'ZOS400']:
+                dataModel = '*P128'
+             if module not in ['GRAMMAR']:
+                 execCmd("""CRTCMOD MODULE(%s/%s) SRCSTMF('%s') OPTIMIZE(%s) INLINE(%s)  \
+                    DBGVIEW(%s) TGTRLS(%s) SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) INCDIR('%s')\
+                    """ % (lib, module, path, opt, inline, dbg, tgtRls, incDir))
+             else:
+                 execCmd("""CRTCPPMOD MODULE(%s/%s) SRCSTMF('%s') OPTIMIZE(%s) INLINE(%s)\
+                    DBGVIEW(%s) TGTRLS(%s) SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) INCDIR('%s')\
+                    """ % (lib, module, path, opt, inline, dbg, tgtRls, incDir))
 
 def crtSrvPgm(srvPgm, modules=None, bndSrvPgm=None, lib=None, tgtRls="*CURRENT"):
              if not lib: lib=targetLibrary
@@ -48,17 +59,16 @@ def crtSrvPgm(srvPgm, modules=None, bndSrvPgm=None, lib=None, tgtRls="*CURRENT")
              for module in modules:
                           modParm += '%s/%s ' % (lib, module)
              execCmd("""CRTSRVPGM  SRVPGM(%s/%s) MODULE(%s) EXPORT(*ALL) \
-                     %s TGTRLS(%s) """
+                     %s TGTRLS(%s)"""
                      % (lib, srvPgm, modParm, bndSrvPgmTxt, tgtRls))
-                     #BNDDIR(QSYS/QC2LE QSYS/QUSAPIBD     )"""
 def crtCmd(cmd, pgm, text="", thdSafe="*YES"):
              lib, pySrcLib = targetLibrary, targetLibrary
              execCmd("""CRTCMD CMD(%s/%s) PGM(%s/%s) SRCFILE(%s/QCMDSRC) THDSAFE(%s) TEXT(%s)"""
              % (lib, cmd, lib, pgm, pySrcLib, thdSafe, text))
-def crtPgm(pgm, srvPgm, lib=None, tgtRls="*CURRENT" ):
+def crtPgm(pgm, srvPgm, lib=None, tgtRls="*CURRENT", actGrp="*CALLER"):
              if not lib: lib=targetLibrary
-             execCmd("""CRTPGM PGM(%s/%s) BNDSRVPGM(%s/%s) ALWLIBUPD(*YES) TGTRLS(%s)"""
-                      % (lib, pgm, lib, srvPgm, tgtRls))
+             execCmd("""CRTPGM PGM(%s/%s) BNDSRVPGM(%s/%s) ALWLIBUPD(*YES) TGTRLS(%s) ACTGRP(%s)"""
+                      % (lib, pgm, lib, srvPgm, tgtRls, actGrp))
 
 moduleMods ={'ITERTOOLSM':'ITERTOOLSMODULE.C','CSV':'_CSV.C','RANDOM':'_RANDOMMODULE.C',
              'ZIPIMPORT':'ZIPIMPORT.C','SRE':'_SRE.C','POSIXMODUL':'POSIXMODULE.C',
@@ -175,7 +185,7 @@ srvPgmMods2 = {'array':"arrayModul",'binascii':"binascii",'cmath':"cmathmodul",'
               #TODO: re-add:                       to dict above
 programs = {'PYTHON':"PYTHON",'PYTHONCMD':"PYTHON"}
 
-def buildDirectoryModules(modules, path, skip=None):
+def buildDirectoryModules(modules, path, incDir, skip=None):
              for module, source in modules.items():
                 if skip and module in skip:
                     print "Skipping %s cause I was told to" % module
@@ -187,7 +197,10 @@ def buildDirectoryModules(modules, path, skip=None):
                 if srcTime < modTime:
                     print "Source hasn't changed. Skipping " +fullSrcPath
                     continue
-                crtCModule(module, path+source, opt=optimize)
+                try:
+                   crtCModule(module, path+source, opt=optimize, incDir=incDir)
+                except:
+                   print "Error creating module %s " % (module)
 
 # Set the target library & release
 if len(argv) == 3:
@@ -198,24 +211,27 @@ optimize = 10
 
 #TODO: Move the source to a reasonable path!
 #sourcePath = '/source/python2.4.1'
-sourcePath = '/home/E11571/python-2.4.1'
+sourcePath = '/home/E11571/python2.4.1'
 
-os.environ["INCLUDE"]=("""%s/..:%s:%s/as400:%s/include:%s/modules:%s/objects:\
+
+include =("""%s/..:%s:%s/lib/plat-os400:%s/include:%s/modules:%s/objects:\
           %s/parser:%s/python:%s/zlib1.1.4:\
           """
           % (sourcePath, sourcePath, sourcePath, sourcePath, sourcePath,
              sourcePath, sourcePath, sourcePath, sourcePath))
-    #     /qibm/proddata/ilec:/qibm/proddata/ilec/include:/qibm/include:/qibm/include/sys"""
+os.environ["INCLUDE"]=include
 
 # Create as/400 modules for each c program in Python distribution directories:
-buildDirectoryModules(modules=objectMods, path=sourcePath+'/objects/')#,skip=['UNICODEOBJ','STRINGOBJE'])
-buildDirectoryModules(modules=pythonMods, path=sourcePath+'/python/')#,skip=['THREAD']) #, 'FROZENMAIN']
-buildDirectoryModules(modules=parserMods, path=sourcePath+'/parser/')
+# First, create an alias for this long function name!
+buildDM = buildDirectoryModules
+buildDM(modules=objectMods, path=sourcePath+'/objects/',incDir=include)#,skip=['FILEOBJECT'])
+buildDM(modules=pythonMods, path=sourcePath+'/python/',incDir=include)#,skip=['THREAD']) #, 'FROZENMAIN']
+buildDM(modules=parserMods, path=sourcePath+'/parser/',incDir=include)
 #TODO: I can't find the source for XREADLINES.  Is it a ghost?
-buildDirectoryModules(modules=moduleMods, path=sourcePath+'/modules/',skip=['XREADLINES'])
-buildDirectoryModules(modules=as400Mods, path=sourcePath+'/as400/')
+buildDM(modules=moduleMods, path=sourcePath+'/modules/',incDir=include,skip=['XREADLINES'])
+buildDM(modules=as400Mods, path=sourcePath+'/lib/plat-os400/',incDir=include)
 ##TODO: Track down source for zlib! No source means this will fail! :-)
-###buildDirectoryModules(modules=zlibMods, path=sourcePath+'/zlib1.1.4/')
+###buildDirectoryModules(modules=zlibMods, path=sourcePath+'/zlib1.1.4/',incDir=include)
 
 # Create the "Python" service program
 crtSrvPgm(srvPgm="Python", modules=pythonSrvPgmMods)
@@ -237,7 +253,7 @@ for srvPgm, modules in srvPgmMods2.items():
              crtSrvPgm(srvPgm=srvPgm, modules=modules, bndSrvPgm='Python')
 
 for pgm, bndSrvPgm in programs.items():
-             crtPgm(pgm=pgm, srvPgm=bndSrvPgm)
+             crtPgm(pgm=pgm, srvPgm=bndSrvPgm, actGrp="*NEW")
 
 crtCmd ("Python", pgm="PythonCmd", text="Python", thdSafe="*YES")
 print "Build completed sucessfully"

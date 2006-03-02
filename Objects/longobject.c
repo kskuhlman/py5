@@ -1234,7 +1234,6 @@ long_from_binary_base(char **str, int base)
 #endif
 		if (k < 0 || k >= base)
 			break;
-
 		++p;
 	}
 	*str = p;

@@ -459,7 +459,7 @@
 #define HAVE_STDLIB_H
 
 /* Define to 1 if you have the `strdup' function. */
-#undef HAVE_STRDUP
+#define HAVE_STRDUP
 
 /* Define to 1 if you have the `strerror' function. */
 #define HAVE_STRERROR

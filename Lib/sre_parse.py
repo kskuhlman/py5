@@ -208,13 +208,9 @@ class Tokenizer:
         self.index, self.next = index
 
 def isident(char):
-    # __ILEC400__
-    #return "a" <= char <= "z" or "A" <= char <= "Z" or char == "_"
     return char.isalpha() or char == "_"
 
 def isdigit(char):
-    # __ILEC400__
-    #return "0" <= char <= "9"
     return char.isdigit()
 
 def isname(name):

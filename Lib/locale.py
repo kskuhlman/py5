@@ -332,6 +332,11 @@ def getdefaultlocale(envvars=('LANGUAGE', 'LC_ALL', 'LC_CTYPE', 'LANG')):
         # necessary...
         return code, encoding
 
+    if sys.platform in ['AS/400','MVS']:
+        code, encoding = 'ebcdic', 'CP037'
+        print "Locale is:", code, encoding
+        return code, encoding
+
     # fall back on POSIX behaviour
     import os
     lookup = os.environ.get

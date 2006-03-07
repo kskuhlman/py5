@@ -1,4 +1,5 @@
 """Append module search paths for third-party packages to sys.path.
+
 ****************************************************************
 * This module is automatically imported during initialization. *
 ****************************************************************
@@ -348,8 +349,8 @@ def setencoding():
     """Set the string encoding used by the Unicode implementation.  The
     default is 'ascii', but if you're willing to experiment, you can
     change this."""
-    encoding = "CP037" # Default value set by _PyUnicode_Init()
-    if 0:
+    encoding = "ascii" # Default value set by _PyUnicode_Init()
+    if 0 or sys.platform in ['AS/400', 'MVS']:
         # Enable to support locale aware default string encodings.
         import locale
         loc = locale.getdefaultlocale()
@@ -359,7 +360,7 @@ def setencoding():
         # Enable to switch off string to Unicode coercion and implicit
         # Unicode to string conversion.
         encoding = "undefined"
-    if encoding != "CP037":
+    if encoding != "ascii":
         # On Non-Unicode builds this will raise an AttributeError...
         sys.setdefaultencoding(encoding) # Needs Python Unicode build !
 
@@ -371,21 +372,8 @@ def execsitecustomize():
     except ImportError:
         pass
 
-# for __ILEC400__ use ebcdic
-if sys.platform == 'AS/400':
-    encoding = "ebcdic" # Default value set by _PyUnicode_Init()
-else:
-    encoding = "ascii" # Default value set by _PyUnicode_Init()
-# for __ILEC400__ put File400 in builtins
-try:
-    import file400
-    import __builtin__
-    __builtin__.File400 = file400.File400
-except:
-    pass
 
 def main():
-    print 'entering main site'
     abs__file__()
     paths_in_sys = removeduppaths()
     if (os.name == "posix" and sys.path and

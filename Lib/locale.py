@@ -333,7 +333,7 @@ def getdefaultlocale(envvars=('LANGUAGE', 'LC_ALL', 'LC_CTYPE', 'LANG')):
         return code, encoding
 
     if sys.platform in ['AS/400','MVS']:
-        code, encoding = 'ebcdic', 'CP037'
+        code, encoding = 'ebcdic', 'cp037'
         return code, encoding
 
     # fall back on POSIX behaviour

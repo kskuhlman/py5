@@ -7236,6 +7236,9 @@ PyObject *PyUnicode_Format(PyObject *format,
                         /* nothing to do */;
                     else if (PyString_Check(temp)) {
                         /* convert to string to Unicode */
+#ifdef __ILEC400__
+#pragma convert(0)
+#endif   
 		    unicode = PyUnicode_Decode(PyString_AS_STRING(temp),
 						   PyString_GET_SIZE(temp),
 					       NULL,

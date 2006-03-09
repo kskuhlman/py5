@@ -15,10 +15,6 @@ typedef PyDictObject dictobject;
 /* Define this out if you don't want conversion statistics on exit. */
 #undef SHOW_CONVERSION_COUNTS
 
-#ifdef __ILEC400__
-#include "as400misc.h"
-#endif
-
 /* See large comment block below.  This must be >= 1. */
 #define PERTURB_SHIFT 5
 
@@ -746,28 +742,16 @@ dict_print(register dictobject *mp, register FILE *fp, register int flags)
 {
 	register int i;
 	register int any;
-#ifdef __ILEC400__
-    char cbuf[6];
-    char *buf = cbuf;
-#endif
 
 	i = Py_ReprEnter((PyObject*)mp);
 	if (i != 0) {
 		if (i < 0)
 			return i;
-#ifdef __ILEC400__
-        fprintf(fp, strFromCp37("{...}", buf));
-#else
 		fprintf(fp, "{...}");
-#endif
 		return 0;
 	}
 
-#ifdef __ILEC400__
-    fprintf(fp, strFromCp37("{", buf));
-#else
 	fprintf(fp, "{");
-#endif
 	any = 0;
 	for (i = 0; i <= mp->ma_mask; i++) {
 		dictentry *ep = mp->ma_table + i;
@@ -777,21 +761,13 @@ dict_print(register dictobject *mp, register FILE *fp, register int flags)
 			   key format */
 			Py_INCREF(pvalue);
 			if (any++ > 0)
-#ifdef __ILEC400__
-                fprintf(fp, strFromCp37(", ", buf));
-#else
 				fprintf(fp, ", ");
-#endif
 			if (PyObject_Print((PyObject *)ep->me_key, fp, 0)!=0) {
 				Py_DECREF(pvalue);
 				Py_ReprLeave((PyObject*)mp);
 				return -1;
 			}
-#ifdef __ILEC400__
-            fprintf(fp, strFromCp37(": ", buf));
-#else
 			fprintf(fp, ": ");
-#endif
 			if (PyObject_Print(pvalue, fp, 0) != 0) {
 				Py_DECREF(pvalue);
 				Py_ReprLeave((PyObject*)mp);
@@ -800,11 +776,7 @@ dict_print(register dictobject *mp, register FILE *fp, register int flags)
 			Py_DECREF(pvalue);
 		}
 	}
-#ifdef __ILEC400__
-    fprintf(fp, strFromCp37("}", buf));
-#else
 	fprintf(fp, "}");
-#endif
 	Py_ReprLeave((PyObject*)mp);
 	return 0;
 }
@@ -816,26 +788,14 @@ dict_repr(dictobject *mp)
 	PyObject *s, *temp, *colon = NULL;
 	PyObject *pieces = NULL, *result = NULL;
 	PyObject *key, *value;
-#ifdef __ILEC400__
-    char cbuf[6];
-    char *buf = cbuf;
-#endif
 
 	i = Py_ReprEnter((PyObject *)mp);
 	if (i != 0) {
-#ifdef __ILEC400__
-        return i > 0 ? PyString_FromString(strFromCp37("{...}",buf)) : NULL;
-#else
 		return i > 0 ? PyString_FromString("{...}") : NULL;
-#endif
 	}
 
 	if (mp->ma_used == 0) {
-#ifdef __ILEC400__
-        result = PyString_FromString(strFromCp37("{}", buf));
-#else
 		result = PyString_FromString("{}");
-#endif
 		goto Done;
 	}
 
@@ -843,11 +803,7 @@ dict_repr(dictobject *mp)
 	if (pieces == NULL)
 		goto Done;
 
-#ifdef __ILEC400__
-    colon = PyString_FromString(strFromCp37(": ", buf));
-#else
 	colon = PyString_FromString(": ");
-#endif
 	if (colon == NULL)
 		goto Done;
 
@@ -872,11 +828,7 @@ dict_repr(dictobject *mp)
 
 	/* Add "{}" decorations to the first and last items. */
 	assert(PyList_GET_SIZE(pieces) > 0);
-#ifdef __ILEC400__
-    s = PyString_FromString(strFromCp37("{", buf));
-#else
 	s = PyString_FromString("{");
-#endif
 	if (s == NULL)
 		goto Done;
 	temp = PyList_GET_ITEM(pieces, 0);
@@ -885,11 +837,7 @@ dict_repr(dictobject *mp)
 	if (s == NULL)
 		goto Done;
 
-#ifdef __ILEC400__
-    s = PyString_FromString(strFromCp37("}", buf));
-#else
 	s = PyString_FromString("}");
-#endif
 	if (s == NULL)
 		goto Done;
 	temp = PyList_GET_ITEM(pieces, PyList_GET_SIZE(pieces) - 1);
@@ -899,11 +847,7 @@ dict_repr(dictobject *mp)
 		goto Done;
 
 	/* Paste them all together with ", " between. */
-#ifdef __ILEC400__
-    s = PyString_FromString(strFromCp37(", ", buf));
-#else
 	s = PyString_FromString(", ");
-#endif
 	if (s == NULL)
 		goto Done;
 	result = _PyString_Join(s, pieces);

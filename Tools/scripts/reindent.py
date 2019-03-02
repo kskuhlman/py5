@@ -4,10 +4,11 @@
 
 """reindent [-d][-r][-v] [ path ... ]
 
--d (--dryrun)  Dry run.  Analyze, but don't make any changes to, files.
--r (--recurse) Recurse.  Search for all .py files in subdirectories too.
--v (--verbose) Verbose.  Print informative msgs; else no output.
--h (--help)    Help.     Print this usage information and exit.
+-d (--dryrun)   Dry run.   Analyze, but don't make any changes to, files.
+-r (--recurse)  Recurse.   Search for all .py files in subdirectories too.
+-n (--nobackup) No backup. Does not make a ".bak" file before reindenting.
+-v (--verbose)  Verbose.   Print informative msgs; else no output.
+-h (--help)     Help.      Print this usage information and exit.
 
 Change Python (.py) files to use 4-space indents and no hard tab characters.
 Also trim excess spaces and tabs from ends of lines, and remove empty lines
@@ -31,17 +32,24 @@ resulting .py file won't change it again).
 The hard part of reindenting is figuring out what to do with comment
 lines.  So long as the input files get a clean bill of health from
 tabnanny.py, reindent should do a good job.
+
+The backup file is a copy of the one that is being reindented. The ".bak"
+file is generated with shutil.copy(), but some corner cases regarding
+user/group and permissions could leave the backup file more readable than
+you'd prefer. You can always use the --nobackup option to prevent this.
 """
 
 __version__ = "1"
 
 import tokenize
-import os
+import os, shutil
 import sys
+import io
 
-verbose = 0
-recurse = 0
-dryrun  = 0
+verbose    = 0
+recurse    = 0
+dryrun     = 0
+makebackup = True
 
 def usage(msg=None):
     if msg is not None:
@@ -57,10 +65,10 @@ def errprint(*args):
 
 def main():
     import getopt
-    global verbose, recurse, dryrun
+    global verbose, recurse, dryrun, makebackup
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "drvh",
-                                   ["dryrun", "recurse", "verbose", "help"])
+        opts, args = getopt.getopt(sys.argv[1:], "drnvh",
+                        ["dryrun", "recurse", "nobackup", "verbose", "help"])
     except getopt.error, msg:
         usage(msg)
         return
@@ -69,6 +77,8 @@ def main():
             dryrun += 1
         elif o in ('-r', '--recurse'):
             recurse += 1
+        elif o in ('-n', '--nobackup'):
+            makebackup = False
         elif o in ('-v', '--verbose'):
             verbose += 1
         elif o in ('-h', '--help'):
@@ -90,7 +100,8 @@ def check(file):
         for name in names:
             fullname = os.path.join(file, name)
             if ((recurse and os.path.isdir(fullname) and
-                 not os.path.islink(fullname))
+                 not os.path.islink(fullname) and
+                 not os.path.split(fullname)[1].startswith("."))
                 or name.lower().endswith(".py")):
                 check(fullname)
         return
@@ -98,13 +109,19 @@ def check(file):
     if verbose:
         print "checking", file, "...",
     try:
-        f = open(file)
+        f = open(file, "rb")
     except IOError, msg:
         errprint("%s: I/O Error: %s" % (file, str(msg)))
         return
 
     r = Reindenter(f)
     f.close()
+
+    newline = r.newlines
+    if isinstance(newline, tuple):
+        errprint("%s: mixed newlines detected; cannot process file" % file)
+        return
+
     if r.run():
         if verbose:
             print "changed."
@@ -112,21 +129,36 @@ def check(file):
                 print "But this is a dry run, so leaving it alone."
         if not dryrun:
             bak = file + ".bak"
-            if os.path.exists(bak):
-                os.remove(bak)
-            os.rename(file, bak)
-            if verbose:
-                print "renamed", file, "to", bak
-            f = open(file, "w")
+            if makebackup:
+                shutil.copyfile(file, bak)
+                if verbose:
+                    print "backed up", file, "to", bak
+            f = open(file, "wb")
             r.write(f)
             f.close()
             if verbose:
                 print "wrote new", file
+        return True
     else:
         if verbose:
             print "unchanged."
+        return False
 
-def _rstrip(line, JUNK='\n \t'):
+def _detect_newlines(lines):
+    newlines = {'\r\n' if line[-2:] == '\r\n' else
+                '\n' if line[-1:] == '\n' else
+                '\r' if line[-1:] == '\r' else
+                ''
+                for line in lines}
+    newlines.discard('')
+    newlines = tuple(sorted(newlines))
+    if not newlines:
+        return '\n'
+    if len(newlines) == 1:
+        return newlines[0]
+    return newlines
+
+def _rstrip(line, JUNK='\r\n \t'):
     """Return line stripped of trailing spaces, tabs, newlines.
 
     Note that line.rstrip() instead also strips sundry control characters,
@@ -148,10 +180,18 @@ class Reindenter:
         # Raw file lines.
         self.raw = f.readlines()
 
+        # Save the newlines found in the file so they can be used to
+        #  create output without mutating the newlines.
+        self.newlines = _detect_newlines(self.raw)
+        if isinstance(self.newlines, tuple):
+            self.newline = self.newlines[0]
+        else:
+            self.newline = self.newlines
+
         # File lines, rstripped & tab-expanded.  Dummy at start is so
         # that we can use tokenize's 1-based line numbering easily.
-        # Note that a line is all-blank iff it's "\n".
-        self.lines = [_rstrip(line).expandtabs() + "\n"
+        # Note that a line is all-blank iff it's newline.
+        self.lines = [_rstrip(line).expandtabs() + self.newline
                       for line in self.raw]
         self.lines.insert(0, None)
         self.index = 1  # index into self.lines of next line
@@ -166,7 +206,7 @@ class Reindenter:
         tokenize.tokenize(self.getline, self.tokeneater)
         # Remove trailing empty lines.
         lines = self.lines
-        while lines and lines[-1] == "\n":
+        while lines and lines[-1] == self.newline:
             lines.pop()
         # Sentinel.
         stats = self.stats
@@ -222,7 +262,7 @@ class Reindenter:
             else:
                 for line in lines[thisstmt:nextstmt]:
                     if diff > 0:
-                        if line == "\n":
+                        if line == self.newline:
                             after.append(line)
                         else:
                             after.append(" " * diff + line)

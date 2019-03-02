@@ -6,49 +6,44 @@ from Tkinter import *
 import tkMessageBox
 
 class TextViewer(Toplevel):
-    """
-    simple text viewer dialog for idle
-    """
-    def __init__(self, parent, title, fileName, data=None):
-        """If data exists, load it into viewer, otherwise try to load file.
+    """A simple text viewer dialog for IDLE
 
-        fileName - string, should be an absoulute filename
+    """
+    def __init__(self, parent, title, text, modal=True, _htest=False):
+        """Show the given text in a scrollable window with a 'close' button
+
+        If modal option set to False, user can interact with other windows,
+        otherwise they will be unable to interact with other windows until
+        the textview window is closed.
+
+        _htest - bool; change box location when running htest.
         """
         Toplevel.__init__(self, parent)
         self.configure(borderwidth=5)
-        self.geometry("=%dx%d+%d+%d" % (625, 500,
-                                        parent.winfo_rootx() + 10,
-                                        parent.winfo_rooty() + 10))
+        # place dialog below parent if running htest
+        self.geometry("=%dx%d+%d+%d" % (750, 500,
+                           parent.winfo_rootx() + 10,
+                           parent.winfo_rooty() + (10 if not _htest else 100)))
         #elguavas - config placeholders til config stuff completed
         self.bg = '#ffffff'
         self.fg = '#000000'
 
         self.CreateWidgets()
         self.title(title)
-        self.transient(parent)
-        self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self.Ok)
         self.parent = parent
         self.textView.focus_set()
         #key bindings for this dialog
         self.bind('<Return>',self.Ok) #dismiss dialog
         self.bind('<Escape>',self.Ok) #dismiss dialog
-        if data:
-            self.textView.insert(0.0, data)
-        else:
-            self.LoadTextFile(fileName)
+        self.textView.insert(0.0, text)
         self.textView.config(state=DISABLED)
-        self.wait_window()
 
-    def LoadTextFile(self, fileName):
-        textFile = None
-        try:
-            textFile = open(fileName, 'r')
-        except IOError:
-            tkMessageBox.showerror(title='File Load Error',
-                    message='Unable to load file %r .' % (fileName,))
-        else:
-            self.textView.insert(0.0,textFile.read())
+        self.is_modal = modal
+        if self.is_modal:
+            self.transient(parent)
+            self.grab_set()
+            self.wait_window()
 
     def CreateWidgets(self):
         frameText = Frame(self, relief=SUNKEN, height=700)
@@ -68,11 +63,35 @@ class TextViewer(Toplevel):
         frameText.pack(side=TOP,expand=TRUE,fill=BOTH)
 
     def Ok(self, event=None):
+        if self.is_modal:
+            self.grab_release()
         self.destroy()
 
+
+def view_text(parent, title, text, modal=True):
+    return TextViewer(parent, title, text, modal)
+
+def view_file(parent, title, filename, encoding=None, modal=True):
+    try:
+        if encoding:
+            import codecs
+            textFile = codecs.open(filename, 'r')
+        else:
+            textFile = open(filename, 'r')
+    except IOError:
+        tkMessageBox.showerror(title='File Load Error',
+                               message='Unable to load file %r .' % filename,
+                               parent=parent)
+    except UnicodeDecodeError as err:
+        showerror(title='Unicode Decode Error',
+                  message=str(err),
+                  parent=parent)
+    else:
+        return view_text(parent, title, textFile.read(), modal)
+
+
 if __name__ == '__main__':
-    #test the dialog
-    root=Tk()
-    Button(root,text='View',
-            command=lambda:TextViewer(root,'Text','./textView.py')).pack()
-    root.mainloop()
+    import unittest
+    unittest.main('idlelib.idle_test.test_textview', verbosity=2, exit=False)
+    from idlelib.idle_test.htest import run
+    run(TextViewer)

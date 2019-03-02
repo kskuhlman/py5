@@ -1,9 +1,9 @@
-"""Thread-local objects
+"""Thread-local objects.
 
-(Note that this module provides a Python version of thread
- threading.local class.  Depending on the version of Python you're
- using, there may be a faster one available.  You should always import
- the local class from threading.)
+(Note that this module provides a Python version of the threading.local
+ class.  Depending on the version of Python you're using, there may be a
+ faster one available.  You should always import the `local` class from
+ `threading`.)
 
 Thread-local objects support the management of thread-local data.
 If you have data that you want to be local to a thread, simply create
@@ -57,11 +57,7 @@ You can create custom local objects by subclassing the local class:
 
   >>> class MyLocal(local):
   ...     number = 2
-  ...     initialized = False
   ...     def __init__(self, **kw):
-  ...         if self.initialized:
-  ...             raise SystemError('__init__ called too many times')
-  ...         self.initialized = True
   ...         self.__dict__.update(kw)
   ...     def squared(self):
   ...         return self.number ** 2
@@ -98,7 +94,7 @@ As before, we can access the data in a separate thread:
   >>> thread.start()
   >>> thread.join()
   >>> log
-  [[('color', 'red'), ('initialized', True)], 11]
+  [[('color', 'red')], 11]
 
 without affecting this thread's data:
 
@@ -133,7 +129,17 @@ affects what we see:
 >>> del mydata
 """
 
-# Threading import is at end
+__all__ = ["local"]
+
+# We need to use objects from the threading module, but the threading
+# module may also want to use our `local` class, if support for locals
+# isn't compiled in to the `thread` module.  This creates potential problems
+# with circular imports.  For that reason, we don't import `threading`
+# until the bottom of this file (a hack sufficient to worm around the
+# potential problems).  Note that almost all platforms do have support for
+# locals in the `thread` module, and there is no circular import problem
+# then, so problems introduced by fiddling the order of imports here won't
+# manifest on most boxes.
 
 class _localbase(object):
     __slots__ = '_local__key', '_local__args', '_local__lock'
@@ -145,23 +151,23 @@ class _localbase(object):
         object.__setattr__(self, '_local__args', (args, kw))
         object.__setattr__(self, '_local__lock', RLock())
 
-        if args or kw and (cls.__init__ is object.__init__):
+        if (args or kw) and (cls.__init__ is object.__init__):
             raise TypeError("Initialization arguments are not supported")
 
         # We need to create the thread dict in anticipation of
-        # __init__ being called, to make sire we don't cal it
+        # __init__ being called, to make sure we don't call it
         # again ourselves.
         dict = object.__getattribute__(self, '__dict__')
-        currentThread().__dict__[key] = dict
+        current_thread().__dict__[key] = dict
 
         return self
 
 def _patch(self):
     key = object.__getattribute__(self, '_local__key')
-    d = currentThread().__dict__.get(key)
+    d = current_thread().__dict__.get(key)
     if d is None:
         d = {}
-        currentThread().__dict__[key] = d
+        current_thread().__dict__[key] = d
         object.__setattr__(self, '__dict__', d)
 
         # we have a new instance dict, so call out __init__ if we have
@@ -185,6 +191,10 @@ class local(_localbase):
             lock.release()
 
     def __setattr__(self, name, value):
+        if name == '__dict__':
+            raise AttributeError(
+                "%r object attribute '__dict__' is read-only"
+                % self.__class__.__name__)
         lock = object.__getattribute__(self, '_local__lock')
         lock.acquire()
         try:
@@ -194,6 +204,10 @@ class local(_localbase):
             lock.release()
 
     def __delattr__(self, name):
+        if name == '__dict__':
+            raise AttributeError(
+                "%r object attribute '__dict__' is read-only"
+                % self.__class__.__name__)
         lock = object.__getattribute__(self, '_local__lock')
         lock.acquire()
         try:
@@ -202,36 +216,32 @@ class local(_localbase):
         finally:
             lock.release()
 
+    def __del__(self):
+        import threading
 
-    def __del__():
-        threading_enumerate = enumerate
-        __getattribute__ = object.__getattribute__
+        key = object.__getattribute__(self, '_local__key')
 
-        def __del__(self):
-            key = __getattribute__(self, '_local__key')
+        try:
+            # We use the non-locking API since we might already hold the lock
+            # (__del__ can be called at any point by the cyclic GC).
+            threads = threading._enumerate()
+        except:
+            # If enumerating the current threads fails, as it seems to do
+            # during shutdown, we'll skip cleanup under the assumption
+            # that there is nothing to clean up.
+            return
 
+        for thread in threads:
             try:
-                threads = list(threading_enumerate())
-            except:
-                # if enumerate fails, as it seems to do during
-                # shutdown, we'll skip cleanup under the assumption
-                # that there is nothing to clean up
-                return
+                __dict__ = thread.__dict__
+            except AttributeError:
+                # Thread is dying, rest in peace.
+                continue
 
-            for thread in threads:
+            if key in __dict__:
                 try:
-                    __dict__ = thread.__dict__
-                except AttributeError:
-                    # Thread is dying, rest in peace
-                    continue
+                    del __dict__[key]
+                except KeyError:
+                    pass # didn't have anything in this thread
 
-                if key in __dict__:
-                    try:
-                        del __dict__[key]
-                    except KeyError:
-                        pass # didn't have anything in this thread
-
-        return __del__
-    __del__ = __del__()
-
-from threading import currentThread, enumerate, RLock
+from threading import current_thread, RLock

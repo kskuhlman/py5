@@ -1,4 +1,4 @@
-# Copyright (C) 2002-2004 Python Software Foundation
+# Copyright (C) 2002-2006 Python Software Foundation
 # Author: Ben Gertzfield
 # Contact: email-sig@python.org
 
@@ -20,13 +20,24 @@ in To:, From:, Cc:, etc. fields, as well as Subject: lines.
 
 This module does not do the line wrapping or end-of-line character conversion
 necessary for proper internationalized headers; it only does dumb encoding and
-decoding.  To deal with the various line wrapping issues, use the email.Header
+decoding.  To deal with the various line wrapping issues, use the email.header
 module.
 """
 
-import re
+__all__ = [
+    'base64_len',
+    'body_decode',
+    'body_encode',
+    'decode',
+    'decodestring',
+    'encode',
+    'encodestring',
+    'header_encode',
+    ]
+
+
 from binascii import b2a_base64, a2b_base64
-from email.Utils import fix_eols
+from email.utils import fix_eols
 
 CRLF = '\r\n'
 NL = '\n'
@@ -119,7 +130,7 @@ def encode(s, binary=True, maxlinelen=76, eol=NL):
     verbatim (this is the default).
 
     Each line of encoded text will end with eol, which defaults to "\\n".  Set
-    this to "\r\n" if you will be using the result of this function directly
+    this to "\\r\\n" if you will be using the result of this function directly
     in an email.
     """
     if not s:
@@ -134,7 +145,7 @@ def encode(s, binary=True, maxlinelen=76, eol=NL):
         # BAW: should encode() inherit b2a_base64()'s dubious behavior in
         # adding a newline to the encoded string?
         enc = b2a_base64(s[i:i + max_unencoded])
-        if enc.endswith(NL) and eol <> NL:
+        if enc.endswith(NL) and eol != NL:
             enc = enc[:-1] + eol
         encvec.append(enc)
     return EMPTYSTRING.join(encvec)
@@ -155,8 +166,8 @@ def decode(s, convert_eols=None):
     decoding a text attachment.
 
     This function does not parse a full MIME header value encoded with
-    base64 (like =?iso-8895-1?b?bmloISBuaWgh?=) -- please use the high
-    level email.Header class for that functionality.
+    base64 (like =?iso-8859-1?b?bmloISBuaWgh?=) -- please use the high
+    level email.header class for that functionality.
     """
     if not s:
         return s

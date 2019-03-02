@@ -1,4 +1,10 @@
-"""Shared support for scanning document type declarations in HTML and XHTML."""
+"""Shared support for scanning document type declarations in HTML and XHTML.
+
+This module is used as a foundation for the HTMLParser and sgmllib
+modules (indirectly, for htmllib as well).  It has no documented
+public API and should not be used directly.
+
+"""
 
 import re
 
@@ -70,13 +76,16 @@ class ParserBase:
         rawdata = self.rawdata
         j = i + 2
         assert rawdata[i:j] == "<!", "unexpected call to parse_declaration"
+        if rawdata[j:j+1] == ">":
+            # the empty comment <!>
+            return j + 1
         if rawdata[j:j+1] in ("-", ""):
             # Start of comment followed by buffer boundary,
             # or just a buffer boundary.
             return -1
         # A simple, practical version could look like: ((name|stringlit) S*) + '>'
         n = len(rawdata)
-        if rawdata[j:j+1] == '--': #comment
+        if rawdata[j:j+2] == '--': #comment
             # Locate --.*-- as the body of the comment
             return self.parse_comment(i)
         elif rawdata[j] == '[': #marked section
@@ -99,6 +108,10 @@ class ParserBase:
                 if decltype == "doctype":
                     self.handle_decl(data)
                 else:
+                    # According to the HTML5 specs sections "8.2.4.44 Bogus
+                    # comment state" and "8.2.4.45 Markup declaration open
+                    # state", a comment token should be emitted.
+                    # Calling unknown_decl provides more flexibility though.
                     self.unknown_decl(data)
                 return j + 1
             if c in "\"'":
@@ -131,7 +144,7 @@ class ParserBase:
 
     # Internal -- parse a marked section
     # Override this to handle MS-word extension syntax <![if word]>content<![endif]>
-    def parse_marked_section( self, i, report=1 ):
+    def parse_marked_section(self, i, report=1):
         rawdata= self.rawdata
         assert rawdata[i:i+3] == '<![', "unexpected call to parse_marked_section()"
         sectName, j = self._scan_name( i+3, i )

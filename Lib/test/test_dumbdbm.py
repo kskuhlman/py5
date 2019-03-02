@@ -1,9 +1,9 @@
-#! /usr/bin/env python
 """Test script for the dumbdbm module
    Original by Roger E. Masse
 """
 
 import os
+import stat
 import unittest
 import dumbdbm
 from test import test_support
@@ -37,6 +37,28 @@ class DumbDBMTestCase(unittest.TestCase):
             f[key] = self._dict[key]
         self.read_helper(f)
         f.close()
+
+    @unittest.skipUnless(hasattr(os, 'chmod'), 'os.chmod not available')
+    @unittest.skipUnless(hasattr(os, 'umask'), 'os.umask not available')
+    def test_dumbdbm_creation_mode(self):
+        try:
+            old_umask = os.umask(0002)
+            f = dumbdbm.open(_fname, 'c', 0637)
+            f.close()
+        finally:
+            os.umask(old_umask)
+
+        expected_mode = 0635
+        if os.name != 'posix':
+            # Windows only supports setting the read-only attribute.
+            # This shouldn't fail, but doesn't work like Unix either.
+            expected_mode = 0666
+
+        import stat
+        st = os.stat(_fname + '.dat')
+        self.assertEqual(stat.S_IMODE(st.st_mode), expected_mode)
+        st = os.stat(_fname + '.dir')
+        self.assertEqual(stat.S_IMODE(st.st_mode), expected_mode)
 
     def test_close_twice(self):
         f = dumbdbm.open(_fname)
@@ -73,6 +95,24 @@ class DumbDBMTestCase(unittest.TestCase):
         f = dumbdbm.open(_fname)
         self.assertEqual(f['1'], 'hello2')
         f.close()
+
+    def test_line_endings(self):
+        # test for bug #1172763: dumbdbm would die if the line endings
+        # weren't what was expected.
+        f = dumbdbm.open(_fname)
+        f['1'] = 'hello'
+        f['2'] = 'hello2'
+        f.close()
+
+        # Mangle the file by adding \r before each newline
+        data = open(_fname + '.dir').read()
+        data = data.replace('\n', '\r\n')
+        open(_fname + '.dir', 'wb').write(data)
+
+        f = dumbdbm.open(_fname)
+        self.assertEqual(f['1'], 'hello')
+        self.assertEqual(f['2'], 'hello2')
+
 
     def read_helper(self, f):
         keys = self.keys_helper(f)
@@ -120,6 +160,34 @@ class DumbDBMTestCase(unittest.TestCase):
             got.sort()
             self.assertEqual(expected, got)
             f.close()
+
+    def test_eval(self):
+        with open(_fname + '.dir', 'w') as stream:
+            stream.write("str(__import__('sys').stdout.write('Hacked!')), 0\n")
+        with test_support.captured_stdout() as stdout:
+            with self.assertRaises(ValueError):
+                dumbdbm.open(_fname).close()
+            self.assertEqual(stdout.getvalue(), '')
+
+    @unittest.skipUnless(hasattr(os, 'chmod'), 'test needs os.chmod()')
+    def test_readonly_files(self):
+        dir = _fname
+        os.mkdir(dir)
+        try:
+            fname = os.path.join(dir, 'db')
+            f = dumbdbm.open(fname, 'n')
+            self.assertEqual(list(f.keys()), [])
+            for key in self._dict:
+                f[key] = self._dict[key]
+            f.close()
+            os.chmod(fname + ".dir", stat.S_IRUSR)
+            os.chmod(fname + ".dat", stat.S_IRUSR)
+            os.chmod(dir, stat.S_IRUSR|stat.S_IXUSR)
+            f = dumbdbm.open(fname, 'r')
+            self.assertEqual(sorted(f.keys()), sorted(self._dict))
+            f.close()  # don't write
+        finally:
+            test_support.rmtree(dir)
 
     def tearDown(self):
         _delete_files()

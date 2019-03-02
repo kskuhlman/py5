@@ -1,11 +1,23 @@
-#! /usr/bin/env python
-"""Simple test script for cryptmodule.c
-   Roger E. Masse
-"""
+import sys
+from test import test_support
+import unittest
 
-from test.test_support import verify, verbose
-import crypt
+crypt = test_support.import_module('crypt')
 
-c = crypt.crypt('mypassword', 'ab')
-if verbose:
-    print 'Test encryption: ', c
+if sys.platform.startswith('openbsd'):
+    raise unittest.SkipTest('The only supported method on OpenBSD is Blowfish')
+
+class CryptTestCase(unittest.TestCase):
+
+    def test_crypt(self):
+        cr = crypt.crypt('mypassword', 'ab')
+        if cr is not None:
+            cr2 = crypt.crypt('mypassword', cr)
+            self.assertEqual(cr2, cr)
+
+
+def test_main():
+    test_support.run_unittest(CryptTestCase)
+
+if __name__ == "__main__":
+    test_main()

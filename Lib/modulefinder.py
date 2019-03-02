@@ -1,25 +1,46 @@
 """Find modules used by a script, using introspection."""
 
-# This module should be kept compatible with Python 2.2, see PEP 291.
-
+from __future__ import generators
 import dis
 import imp
 import marshal
 import os
 import sys
-import new
+import types
+import struct
 
 if hasattr(sys.__stdout__, "newlines"):
     READ_MODE = "U"  # universal line endings
 else:
-    # remain compatible with Python  < 2.3
+    # Python < 2.3 compatibility, no longer strictly required
     READ_MODE = "r"
 
-LOAD_CONST = dis.opname.index('LOAD_CONST')
-IMPORT_NAME = dis.opname.index('IMPORT_NAME')
-STORE_NAME = dis.opname.index('STORE_NAME')
-STORE_GLOBAL = dis.opname.index('STORE_GLOBAL')
-STORE_OPS = [STORE_NAME, STORE_GLOBAL]
+LOAD_CONST = dis.opmap['LOAD_CONST']
+IMPORT_NAME = dis.opmap['IMPORT_NAME']
+STORE_NAME = dis.opmap['STORE_NAME']
+STORE_GLOBAL = dis.opmap['STORE_GLOBAL']
+STORE_OPS = STORE_NAME, STORE_GLOBAL
+HAVE_ARGUMENT = dis.HAVE_ARGUMENT
+EXTENDED_ARG = dis.EXTENDED_ARG
+
+def _unpack_opargs(code):
+    # enumerate() is not an option, since we sometimes process
+    # multiple elements on a single pass through the loop
+    extended_arg = 0
+    n = len(code)
+    i = 0
+    while i < n:
+        op = ord(code[i])
+        offset = i
+        i = i+1
+        arg = None
+        if op >= HAVE_ARGUMENT:
+            arg = ord(code[i]) + ord(code[i+1])*256 + extended_arg
+            extended_arg = 0
+            i = i+2
+            if op == EXTENDED_ARG:
+                extended_arg = arg*65536
+        yield (offset, op, arg)
 
 # Modulefinder does a good job at simulating Python's, but it can not
 # handle __path__ modifications packages make at runtime.  Therefore there
@@ -107,20 +128,20 @@ class ModuleFinder:
 
     def run_script(self, pathname):
         self.msg(2, "run_script", pathname)
-        fp = open(pathname, READ_MODE)
-        stuff = ("", "r", imp.PY_SOURCE)
-        self.load_module('__main__', fp, pathname, stuff)
+        with open(pathname, READ_MODE) as fp:
+            stuff = ("", "r", imp.PY_SOURCE)
+            self.load_module('__main__', fp, pathname, stuff)
 
     def load_file(self, pathname):
         dir, name = os.path.split(pathname)
         name, ext = os.path.splitext(name)
-        fp = open(pathname, READ_MODE)
-        stuff = (ext, "r", imp.PY_SOURCE)
-        self.load_module(name, fp, pathname, stuff)
+        with open(pathname, READ_MODE) as fp:
+            stuff = (ext, "r", imp.PY_SOURCE)
+            self.load_module(name, fp, pathname, stuff)
 
-    def import_hook(self, name, caller=None, fromlist=None):
-        self.msg(3, "import_hook", name, caller, fromlist)
-        parent = self.determine_parent(caller)
+    def import_hook(self, name, caller=None, fromlist=None, level=-1):
+        self.msg(3, "import_hook", name, caller, fromlist, level)
+        parent = self.determine_parent(caller, level=level)
         q, tail = self.find_head_package(parent, name)
         m = self.load_tail(q, tail)
         if not fromlist:
@@ -129,12 +150,26 @@ class ModuleFinder:
             self.ensure_fromlist(m, fromlist)
         return None
 
-    def determine_parent(self, caller):
-        self.msgin(4, "determine_parent", caller)
-        if not caller:
+    def determine_parent(self, caller, level=-1):
+        self.msgin(4, "determine_parent", caller, level)
+        if not caller or level == 0:
             self.msgout(4, "determine_parent -> None")
             return None
         pname = caller.__name__
+        if level >= 1: # relative import
+            if caller.__path__:
+                level -= 1
+            if level == 0:
+                parent = self.modules[pname]
+                assert parent is caller
+                self.msgout(4, "determine_parent ->", parent)
+                return parent
+            if pname.count(".") < level:
+                raise ImportError, "relative importpath too deep"
+            pname = ".".join(pname.split(".")[:-level])
+            parent = self.modules[pname]
+            self.msgout(4, "determine_parent ->", parent)
+            return parent
         if caller.__path__:
             parent = self.modules[pname]
             assert caller is parent
@@ -242,7 +277,7 @@ class ModuleFinder:
         else:
             self.msgout(3, "import_module ->", m)
             return m
-        if self.badmodules.has_key(fqname):
+        if fqname in self.badmodules:
             self.msgout(3, "import_module -> None")
             return None
         if parent and parent.__path__ is None:
@@ -263,7 +298,8 @@ class ModuleFinder:
         self.msgout(3, "import_module ->", m)
         return m
 
-    def load_module(self, fqname, fp, pathname, (suffix, mode, type)):
+    def load_module(self, fqname, fp, pathname, file_info):
+        suffix, mode, type = file_info
         self.msgin(2, "load_module", fqname, fp and "fp", pathname)
         if type == imp.PKG_DIRECTORY:
             m = self.load_package(fqname, pathname)
@@ -292,15 +328,18 @@ class ModuleFinder:
     def _add_badmodule(self, name, caller):
         if name not in self.badmodules:
             self.badmodules[name] = {}
-        self.badmodules[name][caller.__name__] = 1
+        if caller:
+            self.badmodules[name][caller.__name__] = 1
+        else:
+            self.badmodules[name]["-"] = 1
 
-    def _safe_import_hook(self, name, caller, fromlist):
+    def _safe_import_hook(self, name, caller, fromlist, level=-1):
         # wrapper for self.import_hook() that won't raise ImportError
         if name in self.badmodules:
             self._add_badmodule(name, caller)
             return
         try:
-            self.import_hook(name, caller)
+            self.import_hook(name, caller, level=level)
         except ImportError, msg:
             self.msg(2, "ImportError:", str(msg))
             self._add_badmodule(name, caller)
@@ -311,38 +350,74 @@ class ModuleFinder:
                         self._add_badmodule(sub, caller)
                         continue
                     try:
-                        self.import_hook(name, caller, [sub])
+                        self.import_hook(name, caller, [sub], level=level)
                     except ImportError, msg:
                         self.msg(2, "ImportError:", str(msg))
                         fullname = name + "." + sub
                         self._add_badmodule(fullname, caller)
 
+    def scan_opcodes(self, co,
+                     unpack = struct.unpack):
+        # Scan the code, and yield 'interesting' opcode combinations
+        # Version for Python 2.4 and older
+        code = co.co_code
+        names = co.co_names
+        consts = co.co_consts
+        opargs = [(op, arg) for _, op, arg in _unpack_opargs(code)
+                  if op != EXTENDED_ARG]
+        for i, (op, oparg) in enumerate(opargs):
+            if c in STORE_OPS:
+                yield "store", (names[oparg],)
+                continue
+            if (op == IMPORT_NAME and i >= 1
+                    and opargs[i-1][0] == LOAD_CONST):
+                fromlist = consts[opargs[i-1][1]]
+                yield "import", (fromlist, names[oparg])
+                continue
+
+    def scan_opcodes_25(self, co):
+        # Scan the code, and yield 'interesting' opcode combinations
+        code = co.co_code
+        names = co.co_names
+        consts = co.co_consts
+        opargs = [(op, arg) for _, op, arg in _unpack_opargs(code)
+                  if op != EXTENDED_ARG]
+        for i, (op, oparg) in enumerate(opargs):
+            if op in STORE_OPS:
+                yield "store", (names[oparg],)
+                continue
+            if (op == IMPORT_NAME and i >= 2
+                    and opargs[i-1][0] == opargs[i-2][0] == LOAD_CONST):
+                level = consts[opargs[i-2][1]]
+                fromlist = consts[opargs[i-1][1]]
+                if level == -1: # normal import
+                    yield "import", (fromlist, names[oparg])
+                elif level == 0: # absolute import
+                    yield "absolute_import", (fromlist, names[oparg])
+                else: # relative import
+                    yield "relative_import", (level, fromlist, names[oparg])
+                continue
+
     def scan_code(self, co, m):
         code = co.co_code
-        n = len(code)
-        i = 0
-        fromlist = None
-        while i < n:
-            c = code[i]
-            i = i+1
-            op = ord(c)
-            if op >= dis.HAVE_ARGUMENT:
-                oparg = ord(code[i]) + ord(code[i+1])*256
-                i = i+2
-            if op == LOAD_CONST:
-                # An IMPORT_NAME is always preceded by a LOAD_CONST, it's
-                # a tuple of "from" names, or None for a regular import.
-                # The tuple may contain "*" for "from <mod> import *"
-                fromlist = co.co_consts[oparg]
-            elif op == IMPORT_NAME:
-                assert fromlist is None or type(fromlist) is tuple
-                name = co.co_names[oparg]
+        if sys.version_info >= (2, 5):
+            scanner = self.scan_opcodes_25
+        else:
+            scanner = self.scan_opcodes
+        for what, args in scanner(co):
+            if what == "store":
+                name, = args
+                m.globalnames[name] = 1
+            elif what in ("import", "absolute_import"):
+                fromlist, name = args
                 have_star = 0
                 if fromlist is not None:
                     if "*" in fromlist:
                         have_star = 1
                     fromlist = [f for f in fromlist if f != "*"]
-                self._safe_import_hook(name, m, fromlist)
+                if what == "absolute_import": level = 0
+                else: level = -1
+                self._safe_import_hook(name, m, fromlist, level=level)
                 if have_star:
                     # We've encountered an "import *". If it is a Python module,
                     # the code has already been parsed and we can suck out the
@@ -362,10 +437,17 @@ class ModuleFinder:
                             m.starimports[name] = 1
                     else:
                         m.starimports[name] = 1
-            elif op in STORE_OPS:
-                # keep track of all global names that are assigned to
-                name = co.co_names[oparg]
-                m.globalnames[name] = 1
+            elif what == "relative_import":
+                level, fromlist, name = args
+                if name:
+                    self._safe_import_hook(name, m, fromlist, level=level)
+                else:
+                    parent = self.determine_parent(m, level=level)
+                    self._safe_import_hook(parent.__name__, None, fromlist, level=0)
+            else:
+                # We don't expect anything else from the generator.
+                raise RuntimeError(what)
+
         for c in co.co_consts:
             if isinstance(c, type(co)):
                 self.scan_code(c, m)
@@ -385,10 +467,12 @@ class ModuleFinder:
         fp, buf, stuff = self.find_module("__init__", m.__path__)
         self.load_module(fqname, fp, buf, stuff)
         self.msgout(2, "load_package ->", m)
+        if fp:
+            fp.close()
         return m
 
     def add_module(self, fqname):
-        if self.modules.has_key(fqname):
+        if fqname in self.modules:
             return self.modules[fqname]
         self.modules[fqname] = m = Module(fqname)
         return m
@@ -440,7 +524,7 @@ class ModuleFinder:
         # Print modules that may be missing, but then again, maybe not...
         if maybe:
             print
-            print "Submodules thay appear to be missing, but could also be",
+            print "Submodules that appear to be missing, but could also be",
             print "global names in the parent package:"
             for name in maybe:
                 mods = self.badmodules[name].keys()
@@ -522,7 +606,7 @@ class ModuleFinder:
             if isinstance(consts[i], type(co)):
                 consts[i] = self.replace_paths_in_code(consts[i])
 
-        return new.code(co.co_argcount, co.co_nlocals, co.co_stacksize,
+        return types.CodeType(co.co_argcount, co.co_nlocals, co.co_stacksize,
                          co.co_flags, co.co_code, tuple(consts), co.co_names,
                          co.co_varnames, new_filename, co.co_name,
                          co.co_firstlineno, co.co_lnotab,

@@ -1,8 +1,24 @@
-# Copyright (C) 2001-2004 Python Software Foundation
+# Copyright (C) 2001-2010 Python Software Foundation
 # Author: Barry Warsaw
 # Contact: email-sig@python.org
 
 """Miscellaneous utilities."""
+
+__all__ = [
+    'collapse_rfc2231_value',
+    'decode_params',
+    'decode_rfc2231',
+    'encode_rfc2231',
+    'formataddr',
+    'formatdate',
+    'getaddresses',
+    'make_msgid',
+    'mktime_tz',
+    'parseaddr',
+    'parsedate',
+    'parsedate_tz',
+    'unquote',
+    ]
 
 import os
 import re
@@ -10,8 +26,8 @@ import time
 import base64
 import random
 import socket
+import urllib
 import warnings
-from cStringIO import StringIO
 
 from email._parseaddr import quote
 from email._parseaddr import AddressList as _AddressList
@@ -24,12 +40,13 @@ from email._parseaddr import parsedate_tz as _parsedate_tz
 from quopri import decodestring as _qdecode
 
 # Intrapackage imports
-from email.Encoders import _bencode, _qencode
+from email.encoders import _bencode, _qencode
 
 COMMASPACE = ', '
 EMPTYSTRING = ''
 UEMPTYSTRING = u''
 CRLF = '\r\n'
+TICK = "'"
 
 specialsre = re.compile(r'[][\\()<>@,:;".]')
 escapesre = re.compile(r'[][\\()"]')
@@ -43,19 +60,20 @@ def _identity(s):
 
 
 def _bdecode(s):
-    # We can't quite use base64.encodestring() since it tacks on a "courtesy
-    # newline".  Blech!
+    """Decodes a base64 string.
+
+    This function is equivalent to base64.decodestring and it's retained only
+    for backward compatibility. It used to remove the last \\n of the decoded
+    string, if it had any (see issue 7143).
+    """
     if not s:
         return s
-    value = base64.decodestring(s)
-    if not s.endswith('\n') and value.endswith('\n'):
-        return value[:-1]
-    return value
+    return base64.decodestring(s)
 
 
 
 def fix_eols(s):
-    """Replace all line-ending characters with \r\n."""
+    """Replace all line-ending characters with \\r\\n."""
     # Fix newlines with no preceding carriage return
     s = re.sub(r'(?<!\r)\n', CRLF, s)
     # Fix carriage returns with no following newline
@@ -159,21 +177,20 @@ def formatdate(timeval=None, localtime=False, usegmt=False):
 def make_msgid(idstring=None):
     """Returns a string suitable for RFC 2822 compliant Message-ID, e.g:
 
-    <20020201195627.33539.96671@nightshade.la.mastaler.com>
+    <142480216486.20800.16526388040877946887@nightshade.la.mastaler.com>
 
     Optional idstring if given is a string used to strengthen the
     uniqueness of the message id.
     """
-    timeval = time.time()
-    utcdate = time.strftime('%Y%m%d%H%M%S', time.gmtime(timeval))
+    timeval = int(time.time()*100)
     pid = os.getpid()
-    randint = random.randrange(100000)
+    randint = random.getrandbits(64)
     if idstring is None:
         idstring = ''
     else:
         idstring = '.' + idstring
     idhost = socket.getfqdn()
-    msgid = '<%s.%s.%s%s@%s>' % (utcdate, pid, randint, idstring, idhost)
+    msgid = '<%d.%d.%d%s@%s>' % (timeval, pid, randint, idstring, idhost)
     return msgid
 
 
@@ -194,6 +211,12 @@ def parsedate_tz(data):
 
 
 def parseaddr(addr):
+    """
+    Parse addr into its constituent realname and email address parts.
+
+    Return a tuple of realname and email address, unless the parse fails, in
+    which case return a 2-tuple of ('', '').
+    """
     addrs = _AddressList(addr).addresslist
     if not addrs:
         return '', ''
@@ -215,12 +238,10 @@ def unquote(str):
 # RFC2231-related functions - parameter encoding and decoding
 def decode_rfc2231(s):
     """Decode string according to RFC 2231"""
-    import urllib
-    parts = s.split("'", 2)
-    if len(parts) == 1:
-        return None, None, urllib.unquote(s)
-    charset, language, s = parts
-    return charset, language, urllib.unquote(s)
+    parts = s.split(TICK, 2)
+    if len(parts) <= 2:
+        return None, None, s
+    return parts
 
 
 def encode_rfc2231(s, charset=None, language=None):
@@ -244,37 +265,54 @@ rfc2231_continuation = re.compile(r'^(?P<name>\w+)\*((?P<num>[0-9]+)\*?)?$')
 def decode_params(params):
     """Decode parameters list according to RFC 2231.
 
-    params is a sequence of 2-tuples containing (content type, string value).
+    params is a sequence of 2-tuples containing (param name, string value).
     """
+    # Copy params so we don't mess with the original
+    params = params[:]
     new_params = []
-    # maps parameter's name to a list of continuations
+    # Map parameter's name to a list of continuations.  The values are a
+    # 3-tuple of the continuation number, the string value, and a flag
+    # specifying whether a particular segment is %-encoded.
     rfc2231_params = {}
-    # params is a sequence of 2-tuples containing (content_type, string value)
-    name, value = params[0]
+    name, value = params.pop(0)
     new_params.append((name, value))
-    # Cycle through each of the rest of the parameters.
-    for name, value in params[1:]:
+    while params:
+        name, value = params.pop(0)
+        if name.endswith('*'):
+            encoded = True
+        else:
+            encoded = False
         value = unquote(value)
         mo = rfc2231_continuation.match(name)
         if mo:
             name, num = mo.group('name', 'num')
             if num is not None:
                 num = int(num)
-            rfc2231_param1 = rfc2231_params.setdefault(name, [])
-            rfc2231_param1.append((num, value))
+            rfc2231_params.setdefault(name, []).append((num, value, encoded))
         else:
             new_params.append((name, '"%s"' % quote(value)))
     if rfc2231_params:
         for name, continuations in rfc2231_params.items():
             value = []
+            extended = False
             # Sort by number
             continuations.sort()
-            # And now append all values in num order
-            for num, continuation in continuations:
-                value.append(continuation)
-            charset, language, value = decode_rfc2231(EMPTYSTRING.join(value))
-            new_params.append(
-                (name, (charset, language, '"%s"' % quote(value))))
+            # And now append all values in numerical order, converting
+            # %-encodings for the encoded segments.  If any of the
+            # continuation names ends in a *, then the entire string, after
+            # decoding segments and concatenating, must have the charset and
+            # language specifiers at the beginning of the string.
+            for num, s, encoded in continuations:
+                if encoded:
+                    s = urllib.unquote(s)
+                    extended = True
+                value.append(s)
+            value = quote(EMPTYSTRING.join(value))
+            if extended:
+                charset, language, value = decode_rfc2231(value)
+                new_params.append((name, (charset, language, '"%s"' % value)))
+            else:
+                new_params.append((name, '"%s"' % value))
     return new_params
 
 def collapse_rfc2231_value(value, errors='replace',

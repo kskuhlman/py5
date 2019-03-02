@@ -1,17 +1,15 @@
-#!/usr/bin/env python
 #
 # test_codecencodings_hk.py
 #   Codec encoding tests for HongKong encodings.
 #
-# $CJKCodecs: test_codecencodings_hk.py,v 1.1 2004/07/10 17:35:20 perky Exp $
 
 from test import test_support
-from test import test_multibytecodec_support
+from test import multibytecodec_support
 import unittest
 
-class Test_Big5HKSCS(test_multibytecodec_support.TestBase, unittest.TestCase):
+class Test_Big5HKSCS(multibytecodec_support.TestBase, unittest.TestCase):
     encoding = 'big5hkscs'
-    tstring = test_multibytecodec_support.load_teststring('big5hkscs')
+    tstring = multibytecodec_support.load_teststring('big5hkscs')
     codectests = (
         # invalid bytes
         ("abc\x80\x80\xc1\xc4", "strict",  None),
@@ -22,9 +20,7 @@ class Test_Big5HKSCS(test_multibytecodec_support.TestBase, unittest.TestCase):
     )
 
 def test_main():
-    suite = unittest.TestSuite()
-    suite.addTest(unittest.makeSuite(Test_Big5HKSCS))
-    test_support.run_suite(suite)
+    test_support.run_unittest(__name__)
 
 if __name__ == "__main__":
     test_main()

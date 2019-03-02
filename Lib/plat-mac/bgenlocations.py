@@ -5,7 +5,10 @@
 # but mac-style for MacPython, whether running on OS9 or OSX.
 #
 
-import sys, os
+import os
+
+from warnings import warnpy3k
+warnpy3k("In 3.x, the bgenlocations module is removed.", stacklevel=2)
 
 Error = "bgenlocations.Error"
 #
@@ -31,7 +34,7 @@ TOOLBOXDIR="/Users/jack/src/python/Lib/plat-mac/Carbon"
 # Creator for C files:
 CREATOR="CWIE"
 
-# The previous definitions can be overriden by creating a module
+# The previous definitions can be overridden by creating a module
 # bgenlocationscustomize.py and putting it in site-packages (or anywere else
 # on sys.path, actually)
 try:

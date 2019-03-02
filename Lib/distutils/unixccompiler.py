@@ -13,11 +13,10 @@ the "typical" Unix-style command-line C compiler:
   * link shared library handled by 'cc -shared'
 """
 
-__revision__ = "$Id: unixccompiler.py,v 1.56 2004/08/29 16:40:55 loewis Exp $"
+__revision__ = "$Id$"
 
-import os, sys
+import os, sys, re
 from types import StringType, NoneType
-from copy import copy
 
 from distutils import sysconfig
 from distutils.dep_util import newer
@@ -26,6 +25,9 @@ from distutils.ccompiler import \
 from distutils.errors import \
      DistutilsExecError, CompileError, LibError, LinkError
 from distutils import log
+
+if sys.platform == 'darwin':
+    import _osx_support
 
 # XXX Things not currently handled:
 #   * optimization/debug/warning flags; we just use whatever's in Python's
@@ -41,6 +43,7 @@ from distutils import log
 #     current system, they can be as system-dependent as they like, and we
 #     should just happily stuff them into the preprocessor/compiler/linker
 #     options and carry on.
+
 
 class UnixCCompiler(CCompiler):
 
@@ -76,7 +79,9 @@ class UnixCCompiler(CCompiler):
     static_lib_extension = ".a"
     shared_lib_extension = ".so"
     dylib_lib_extension = ".dylib"
+    xcode_stub_lib_extension = ".tbd"
     static_lib_format = shared_lib_format = dylib_lib_format = "lib%s%s"
+    xcode_stub_lib_format = dylib_lib_format
     if sys.platform == "cygwin":
         exe_extension = ".exe"
 
@@ -108,11 +113,12 @@ class UnixCCompiler(CCompiler):
                 raise CompileError, msg
 
     def _compile(self, obj, src, ext, cc_args, extra_postargs, pp_opts):
+        compiler_so = self.compiler_so
+        if sys.platform == 'darwin':
+            compiler_so = _osx_support.compiler_fixup(compiler_so,
+                                                    cc_args + extra_postargs)
         try:
-            # @@JYM putting the -o obj before src for mvs
-            # support , this should not hurt other unix c
-            # compiler's implementations
-            self.spawn(self.compiler_so + cc_args + ['-o', obj , src ] +
+            self.spawn(compiler_so + cc_args + [src, '-o', obj] +
                        extra_postargs)
         except DistutilsExecError, msg:
             raise CompileError, msg
@@ -160,18 +166,8 @@ class UnixCCompiler(CCompiler):
             output_filename = os.path.join(output_dir, output_filename)
 
         if self._need_link(objects, output_filename):
-            # MVS C compiler not comfortable with trailing -o
-            if sys.platform == 'mvs':
-              # hardcode the dynamic link exported .so entries
-              lib_opts = ['libpython2.4.x']
-              ld_args = (['-o',output_filename] + objects +
-                         self.objects + lib_opts )
-              print 'ldarg=' , ld_args
-              print 'extrp=' , extra_preargs
-              print 'extrpos=' , extra_postargs
-            else:
-              ld_args = (objects + self.objects +
-                         lib_opts + ['-o', output_filename])
+            ld_args = (objects + self.objects +
+                       lib_opts + ['-o', output_filename])
             if debug:
                 ld_args[:0] = ['-g']
             if extra_preargs:
@@ -185,7 +181,22 @@ class UnixCCompiler(CCompiler):
                 else:
                     linker = self.linker_so[:]
                 if target_lang == "c++" and self.compiler_cxx:
-                    linker[0] = self.compiler_cxx[0]
+                    # skip over environment variable settings if /usr/bin/env
+                    # is used to set up the linker's environment.
+                    # This is needed on OSX. Note: this assumes that the
+                    # normal and C++ compiler have the same environment
+                    # settings.
+                    i = 0
+                    if os.path.basename(linker[0]) == "env":
+                        i = 1
+                        while '=' in linker[i]:
+                            i = i + 1
+
+                    linker[i] = self.compiler_cxx[i]
+
+                if sys.platform == 'darwin':
+                    linker = _osx_support.compiler_fixup(linker, ld_args)
+
                 self.spawn(linker + ld_args)
             except DistutilsExecError, msg:
                 raise LinkError, msg
@@ -198,6 +209,9 @@ class UnixCCompiler(CCompiler):
 
     def library_dir_option(self, dir):
         return "-L" + dir
+
+    def _is_gcc(self, compiler_name):
+        return "gcc" in compiler_name or "g++" in compiler_name
 
     def runtime_library_dir_option(self, dir):
         # XXX Hackish, at the very least.  See Python bug #445902:
@@ -216,11 +230,15 @@ class UnixCCompiler(CCompiler):
         if sys.platform[:6] == "darwin":
             # MacOSX's linker doesn't understand the -R flag at all
             return "-L" + dir
+        elif sys.platform[:7] == "freebsd":
+            return "-Wl,-rpath=" + dir
         elif sys.platform[:5] == "hp-ux":
-            return "+s -L" + dir
+            if self._is_gcc(compiler):
+                return ["-Wl,+s", "-L" + dir]
+            return ["+s", "-L" + dir]
         elif sys.platform[:7] == "irix646" or sys.platform[:6] == "osf1V5":
             return ["-rpath", dir]
-        elif compiler[:3] == "gcc" or compiler[:3] == "g++":
+        elif self._is_gcc(compiler):
             return "-Wl,-R" + dir
         else:
             return "-R" + dir
@@ -231,18 +249,60 @@ class UnixCCompiler(CCompiler):
     def find_library_file(self, dirs, lib, debug=0):
         shared_f = self.library_filename(lib, lib_type='shared')
         dylib_f = self.library_filename(lib, lib_type='dylib')
+        xcode_stub_f = self.library_filename(lib, lib_type='xcode_stub')
         static_f = self.library_filename(lib, lib_type='static')
+
+        if sys.platform == 'darwin':
+            # On OSX users can specify an alternate SDK using
+            # '-isysroot', calculate the SDK root if it is specified
+            # (and use it further on)
+            #
+            # Note that, as of Xcode 7, Apple SDKs may contain textual stub
+            # libraries with .tbd extensions rather than the normal .dylib
+            # shared libraries installed in /.  The Apple compiler tool
+            # chain handles this transparently but it can cause problems
+            # for programs that are being built with an SDK and searching
+            # for specific libraries.  Callers of find_library_file need to
+            # keep in mind that the base filename of the returned SDK library
+            # file might have a different extension from that of the library
+            # file installed on the running system, for example:
+            #   /Applications/Xcode.app/Contents/Developer/Platforms/
+            #       MacOSX.platform/Developer/SDKs/MacOSX10.11.sdk/
+            #       usr/lib/libedit.tbd
+            # vs
+            #   /usr/lib/libedit.dylib
+            cflags = sysconfig.get_config_var('CFLAGS')
+            m = re.search(r'-isysroot\s+(\S+)', cflags)
+            if m is None:
+                sysroot = '/'
+            else:
+                sysroot = m.group(1)
+
+
 
         for dir in dirs:
             shared = os.path.join(dir, shared_f)
             dylib = os.path.join(dir, dylib_f)
             static = os.path.join(dir, static_f)
+            xcode_stub = os.path.join(dir, xcode_stub_f)
+
+            if sys.platform == 'darwin' and (
+                dir.startswith('/System/') or (
+                dir.startswith('/usr/') and not dir.startswith('/usr/local/'))):
+
+                shared = os.path.join(sysroot, dir[1:], shared_f)
+                dylib = os.path.join(sysroot, dir[1:], dylib_f)
+                static = os.path.join(sysroot, dir[1:], static_f)
+                xcode_stub = os.path.join(sysroot, dir[1:], xcode_stub_f)
+
             # We're second-guessing the linker here, with not much hard
             # data to go on: GCC seems to prefer the shared library, so I'm
             # assuming that *all* Unix C compilers do.  And of course I'm
             # ignoring even GCC's "-static" option.  So sue me.
             if os.path.exists(dylib):
                 return dylib
+            elif os.path.exists(xcode_stub):
+                return xcode_stub
             elif os.path.exists(shared):
                 return shared
             elif os.path.exists(static):

@@ -3,15 +3,17 @@ Dialog for building Tkinter accelerator key bindings
 """
 from Tkinter import *
 import tkMessageBox
-import string, os
+import string
+import sys
 
 class GetKeysDialog(Toplevel):
-    def __init__(self,parent,title,action,currentKeySequences):
+    def __init__(self,parent,title,action,currentKeySequences,_htest=False):
         """
         action - string, the name of the virtual event these keys will be
                  mapped to
         currentKeys - list, a list of all key sequence lists currently mapped
                  to virtual events, for overlap checking
+        _htest - bool, change box location when running htest
         """
         Toplevel.__init__(self, parent)
         self.configure(borderwidth=5)
@@ -26,21 +28,25 @@ class GetKeysDialog(Toplevel):
         self.result=''
         self.keyString=StringVar(self)
         self.keyString.set('')
-        self.SetModifiersForPlatform()
+        self.SetModifiersForPlatform() # set self.modifiers, self.modifier_label
         self.modifier_vars = []
         for modifier in self.modifiers:
             variable = StringVar(self)
             variable.set('')
             self.modifier_vars.append(variable)
+        self.advanced = False
         self.CreateWidgets()
         self.LoadFinalKeyList()
         self.withdraw() #hide while setting geometry
         self.update_idletasks()
-        self.geometry("+%d+%d" %
-            ((parent.winfo_rootx()+((parent.winfo_width()/2)
-                -(self.winfo_reqwidth()/2)),
-              parent.winfo_rooty()+((parent.winfo_height()/2)
-                -(self.winfo_reqheight()/2)) )) ) #centre dialog over parent
+        self.geometry(
+                "+%d+%d" % (
+                    parent.winfo_rootx() +
+                    (parent.winfo_width()/2 - self.winfo_reqwidth()/2),
+                    parent.winfo_rooty() +
+                    ((parent.winfo_height()/2 - self.winfo_reqheight()/2)
+                    if not _htest else 150)
+                ) )  #centre dialog over parent (or below htest box)
         self.deiconify() #geometry set, unhide
         self.wait_window()
 
@@ -131,12 +137,11 @@ class GetKeysDialog(Toplevel):
         order is also important: key binding equality depends on it, so
         config-keys.def must use the same ordering.
         """
-        import sys
-        if sys.platform == 'darwin' and sys.executable.count('.app'):
+        if sys.platform == "darwin":
             self.modifiers = ['Shift', 'Control', 'Option', 'Command']
         else:
             self.modifiers = ['Control', 'Alt', 'Shift']
-        self.modifier_label = {'Control': 'Ctrl'}
+        self.modifier_label = {'Control': 'Ctrl'} # short name
 
     def ToggleLevel(self):
         if  self.buttonLevel.cget('text')[:8]=='Advanced':
@@ -145,11 +150,13 @@ class GetKeysDialog(Toplevel):
             self.frameKeySeqAdvanced.lift()
             self.frameHelpAdvanced.lift()
             self.entryKeysAdvanced.focus_set()
+            self.advanced = True
         else:
             self.ClearKeySeq()
             self.buttonLevel.config(text='Advanced Key Binding Entry >>')
             self.frameKeySeqBasic.lift()
             self.frameControlsBasic.lift()
+            self.advanced = False
 
     def FinalKeySelected(self,event):
         self.BuildKeyString()
@@ -164,7 +171,7 @@ class GetKeysDialog(Toplevel):
 
     def GetModifiers(self):
         modList = [variable.get() for variable in self.modifier_vars]
-        return filter(None, modList)
+        return [mod for mod in modList if mod]
 
     def ClearKeySeq(self):
         self.listKeysFinal.select_clear(0,END)
@@ -199,7 +206,7 @@ class GetKeysDialog(Toplevel):
                 ':':'colon',',':'comma','.':'period','<':'less','>':'greater',
                 '/':'slash','?':'question','Page Up':'Prior','Page Down':'Next',
                 'Left Arrow':'Left','Right Arrow':'Right','Up Arrow':'Up',
-                'Down Arrow': 'Down', 'Tab':'tab'}
+                'Down Arrow': 'Down', 'Tab':'Tab'}
         if key in translateDict.keys():
             key = translateDict[key]
         if 'Shift' in modifiers and key in string.ascii_lowercase:
@@ -208,16 +215,23 @@ class GetKeysDialog(Toplevel):
         return key
 
     def OK(self, event=None):
-        if self.KeysOK():
+        if self.advanced or self.KeysOK():  # doesn't check advanced string yet
             self.result=self.keyString.get()
+            self.grab_release()
             self.destroy()
 
     def Cancel(self, event=None):
         self.result=''
+        self.grab_release()
         self.destroy()
 
     def KeysOK(self):
-        "Validity check on user's keybinding selection"
+        '''Validity check on user's 'basic' keybinding selection.
+
+        Doesn't check the string produced by the advanced dialog because
+        'modifiers' isn't set.
+
+        '''
         keys = self.keyString.get()
         keys.strip()
         finalKey = self.listKeysFinal.get(ANCHOR)
@@ -232,30 +246,23 @@ class GetKeysDialog(Toplevel):
         elif not keys.endswith('>'):
             tkMessageBox.showerror(title=title, parent=self,
                                    message='Missing the final Key')
-        elif not modifiers and finalKey not in self.functionKeys:
+        elif (not modifiers
+              and finalKey not in self.functionKeys + self.moveKeys):
             tkMessageBox.showerror(title=title, parent=self,
                                    message='No modifier key(s) specified.')
         elif (modifiers == ['Shift']) \
                  and (finalKey not in
-                      self.functionKeys + ('Tab', 'Space')):
-            msg = 'The shift modifier by itself may not be used with' \
-                  ' this key symbol; only with F1-F12, Tab, or Space'
-            tkMessageBox.showerror(title=title, parent=self,
-                                   message=msg)
+                      self.functionKeys + self.moveKeys + ('Tab', 'Space')):
+            msg = 'The shift modifier by itself may not be used with'\
+                  ' this key symbol.'
+            tkMessageBox.showerror(title=title, parent=self, message=msg)
         elif keySequence in self.currentKeySequences:
             msg = 'This key combination is already in use.'
-            tkMessageBox.showerror(title=title, parent=self,
-                                   message=msg)
+            tkMessageBox.showerror(title=title, parent=self, message=msg)
         else:
             keysOK = True
         return keysOK
 
 if __name__ == '__main__':
-    #test the dialog
-    root=Tk()
-    def run():
-        keySeq=''
-        dlg=GetKeysDialog(root,'Get Keys','find-again',[])
-        print dlg.result
-    Button(root,text='Dialog',command=run).pack()
-    root.mainloop()
+    from idlelib.idle_test.htest import run
+    run(GetKeysDialog)

@@ -8,13 +8,19 @@ the PythonShell window, and a Format menu which is only present in the Editor
 windows.
 
 """
-import sys
-from configHandler import idleConf
+from idlelib.configHandler import idleConf
+
+#   Warning: menudefs is altered in macosxSupport.overrideRootMenu()
+#   after it is determined that an OS X Aqua Tk is in use,
+#   which cannot be done until after Tk() is first called.
+#   Do not alter the 'file', 'options', or 'help' cascades here
+#   without altering overrideRootMenu() as well.
+#       TODO: Make this more robust
 
 menudefs = [
  # underscore prefixes character to underscore
  ('file', [
-   ('_New Window', '<<open-new-window>>'),
+   ('_New File', '<<open-new-window>>'),
    ('_Open...', '<<open-window-from-file>>'),
    ('Open _Module...', '<<open-module>>'),
    ('Class _Browser', '<<open-class-browser>>'),
@@ -22,9 +28,9 @@ menudefs = [
    None,
    ('_Save', '<<save-window>>'),
    ('Save _As...', '<<save-window-as-file>>'),
-   ('Save Co_py As...', '<<save-copy-of-window-as-file>>'),
+   ('Save Cop_y As...', '<<save-copy-of-window-as-file>>'),
    None,
-   ('_Print Window', '<<print-window>>'),
+   ('Prin_t Window', '<<print-window>>'),
    None,
    ('_Close', '<<close-window>>'),
    ('E_xit', '<<close-all-windows>>'),
@@ -61,6 +67,8 @@ menudefs = [
  ('shell', [
    ('_View Last Restart', '<<view-restart>>'),
    ('_Restart Shell', '<<restart-shell>>'),
+   None,
+   ('_Interrupt Execution', '<<interrupt-execution>>'),
    ]),
  ('debug', [
    ('_Go to File/Line', '<<goto-file-line>>'),
@@ -69,7 +77,7 @@ menudefs = [
    ('!_Auto-open Stack Viewer', '<<toggle-jit-stack-viewer>>'),
    ]),
  ('options', [
-   ('_Configure IDLE...', '<<open-config-dialog>>'),
+   ('Configure _IDLE', '<<open-config-dialog>>'),
    None,
    ]),
  ('help', [
@@ -81,5 +89,3 @@ menudefs = [
 ]
 
 default_keydefs = idleConf.GetCurrentKeySet()
-
-del sys

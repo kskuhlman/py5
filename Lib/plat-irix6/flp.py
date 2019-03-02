@@ -3,6 +3,10 @@
 #
 # Jack Jansen, December 1991
 #
+from warnings import warnpy3k
+warnpy3k("the flp module has been removed in Python 3.0", stacklevel=2)
+del warnpy3k
+
 import os
 import sys
 import FL
@@ -324,7 +328,7 @@ def _parse_object(file):
 #################################################################
 
 #
-# External - Create a form an link to an instance variable.
+# External - Create a form and link to an instance variable.
 #
 def create_full_form(inst, (fdata, odatalist)):
     form = create_form(fdata)

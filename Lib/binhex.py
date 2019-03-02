@@ -32,7 +32,8 @@ class Error(Exception):
     pass
 
 # States (what have we written)
-[_DID_HEADER, _DID_DATA, _DID_RSRC] = range(3)
+_DID_HEADER = 0
+_DID_DATA = 1
 
 # Various constants
 REASONABLY_LARGE=32768  # Minimal amount we pass the rle-coder
@@ -44,22 +45,14 @@ RUNCHAR=chr(0x90)   # run-length introducer
 
 #
 # Workarounds for non-mac machines.
-if os.name == 'mac':
-    import macfs
-    import MacOS
-    try:
-        openrf = MacOS.openrf
-    except AttributeError:
-        # Backward compatibility
-        openrf = open
-
-    def FInfo():
-        return macfs.FInfo()
+try:
+    from Carbon.File import FSSpec, FInfo
+    from MacOS import openrf
 
     def getfileinfo(name):
-        finfo = macfs.FSSpec(name).GetFInfo()
+        finfo = FSSpec(name).FSpGetFInfo()
         dir, file = os.path.split(name)
-        # XXXX Get resource/data sizes
+        # XXX Get resource/data sizes
         fp = open(name, 'rb')
         fp.seek(0, 2)
         dlen = fp.tell()
@@ -75,7 +68,7 @@ if os.name == 'mac':
             mode = '*' + mode[0]
         return openrf(name, mode)
 
-else:
+except ImportError:
     #
     # Glue code for non-macintosh usage
     #
@@ -178,13 +171,11 @@ class _Rlecoderengine:
         del self.ofp
 
 class BinHex:
-    def __init__(self, (name, finfo, dlen, rlen), ofp):
+    def __init__(self, name_finfo_dlen_rlen, ofp):
+        name, finfo, dlen, rlen = name_finfo_dlen_rlen
         if type(ofp) == type(''):
             ofname = ofp
             ofp = open(ofname, 'w')
-            if os.name == 'mac':
-                fss = macfs.FSSpec(ofname)
-                fss.SetCreatorType('BnHq', 'TEXT')
         ofp.write('(This file must be converted with BinHex 4.0)\n\n:')
         hqxer = _Hqxcoderengine(ofp)
         self.ofp = _Rlecoderengine(hqxer)
@@ -217,7 +208,11 @@ class BinHex:
     def _writecrc(self):
         # XXXX Should this be here??
         # self.crc = binascii.crc_hqx('\0\0', self.crc)
-        self.ofp.write(struct.pack('>h', self.crc))
+        if self.crc < 0:
+            fmt = '>h'
+        else:
+            fmt = '>H'
+        self.ofp.write(struct.pack(fmt, self.crc))
         self.crc = 0
 
     def write(self, data):
@@ -241,17 +236,22 @@ class BinHex:
         self._write(data)
 
     def close(self):
-        if self.state < _DID_DATA:
-            self.close_data()
-        if self.state != _DID_DATA:
-            raise Error, 'Close at the wrong time'
-        if self.rlen != 0:
-            raise Error, \
-                  "Incorrect resource-datasize, diff=%r" % (self.rlen,)
-        self._writecrc()
-        self.ofp.close()
-        self.state = None
-        del self.ofp
+        if self.state is None:
+            return
+        try:
+            if self.state < _DID_DATA:
+                self.close_data()
+            if self.state != _DID_DATA:
+                raise Error, 'Close at the wrong time'
+            if self.rlen != 0:
+                raise Error, \
+                    "Incorrect resource-datasize, diff=%r" % (self.rlen,)
+            self._writecrc()
+        finally:
+            self.state = None
+            ofp = self.ofp
+            del self.ofp
+            ofp.close()
 
 def binhex(inp, out):
     """(infilename, outfilename) - Create binhex-encoded copy of a file"""
@@ -469,11 +469,15 @@ class HexBin:
         return self._read(n)
 
     def close(self):
-        if self.rlen:
-            dummy = self.read_rsrc(self.rlen)
-        self._checkcrc()
-        self.state = _DID_RSRC
-        self.ifp.close()
+        if self.state is None:
+            return
+        try:
+            if self.rlen:
+                dummy = self.read_rsrc(self.rlen)
+            self._checkcrc()
+        finally:
+            self.state = None
+            self.ifp.close()
 
 def hexbin(inp, out):
     """(infilename, outfilename) - Decode binhexed file"""
@@ -481,9 +485,6 @@ def hexbin(inp, out):
     finfo = ifp.FInfo
     if not out:
         out = ifp.FName
-    if os.name == 'mac':
-        ofss = macfs.FSSpec(out)
-        out = ofss.as_pathname()
 
     ofp = open(out, 'wb')
     # XXXX Do translation on non-mac systems
@@ -504,23 +505,10 @@ def hexbin(inp, out):
             ofp.write(d)
         ofp.close()
 
-    if os.name == 'mac':
-        nfinfo = ofss.GetFInfo()
-        nfinfo.Creator = finfo.Creator
-        nfinfo.Type = finfo.Type
-        nfinfo.Flags = finfo.Flags
-        ofss.SetFInfo(nfinfo)
-
     ifp.close()
 
 def _test():
-    if os.name == 'mac':
-        fss, ok = macfs.PromptGetFile('File to convert:')
-        if not ok:
-            sys.exit(0)
-        fname = fss.as_pathname()
-    else:
-        fname = sys.argv[1]
+    fname = sys.argv[1]
     binhex(fname, fname+'.hqx')
     hexbin(fname+'.hqx', fname+'.viahqx')
     #hexbin(fname, fname+'.unpacked')

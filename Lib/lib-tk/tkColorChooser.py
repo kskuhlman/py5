@@ -1,8 +1,4 @@
-#
-# Instant Python
-# $Id: tkColorChooser.py,v 1.6 2003/04/06 09:00:52 rhettinger Exp $
-#
-# tk common colour chooser dialogue
+# tk common color chooser dialogue
 #
 # this module provides an interface to the native color dialogue
 # available in Tk 4.2 and newer.
@@ -15,7 +11,7 @@
 #
 # options (all have default values):
 #
-# - initialcolor: colour to mark as selected when dialog is displayed
+# - initialcolor: color to mark as selected when dialog is displayed
 #   (given as an RGB triplet or a Tk color string)
 #
 # - parent: which window to place the dialog on top of
@@ -38,19 +34,22 @@ class Chooser(Dialog):
         try:
             # make sure initialcolor is a tk color string
             color = self.options["initialcolor"]
-            if type(color) == type(()):
+            if isinstance(color, tuple):
                 # assume an RGB triplet
                 self.options["initialcolor"] = "#%02x%02x%02x" % color
         except KeyError:
             pass
 
     def _fixresult(self, widget, result):
+        # result can be somethings: an empty tuple, an empty string or
+        # a Tcl_Obj, so this somewhat weird check handles that
+        if not result or not str(result):
+            return None, None # canceled
+
         # to simplify application code, the color chooser returns
         # an RGB tuple together with the Tk color string
-        if not result:
-            return None, None # canceled
         r, g, b = widget.winfo_rgb(result)
-        return (r/256, g/256, b/256), result
+        return (r/256, g/256, b/256), str(result)
 
 
 #
@@ -70,5 +69,4 @@ def askcolor(color = None, **options):
 # test stuff
 
 if __name__ == "__main__":
-
     print "color", askcolor()

@@ -1,8 +1,8 @@
 # -*-mode: python; fill-column: 75; tab-width: 8; coding: iso-latin-1-unix -*-
 #
-# $Id: CmpImg.py,v 1.3 2004/07/18 06:10:36 tim_one Exp $
+# $Id$
 #
-# Tix Demostration Program
+# Tix Demonstration Program
 #
 # This sample program is structured in such a way so that it can be
 # executed from the Tix demo program "tixwidgets.py": it must have a
@@ -155,7 +155,7 @@ def RunSample(w):
     net = Tix.Button(w, padx=4, pady=1, width=120)
 
     # Create the first image: we create a line, then put a string,
-    # a space and a image into this line, from left to right.
+    # a space and an image into this line, from left to right.
     # The result: we have a one-line image that consists of three
     # individual items
     #

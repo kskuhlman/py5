@@ -1,8 +1,8 @@
 # -*-mode: python; fill-column: 75; tab-width: 8; coding: iso-latin-1-unix -*-
 #
-# $Id: Balloon.py,v 1.3 2004/07/18 06:10:36 tim_one Exp $
+# $Id$
 #
-# Tix Demostration Program
+# Tix Demonstration Program
 #
 # This sample program is structured in such a way so that it can be
 # executed from the Tix demo program "tixwidgets.py": it must have a
@@ -11,7 +11,7 @@
 # program.
 
 # This file demonstrates the use of the tixBalloon widget, which provides
-# a interesting way to give help tips about elements in your user interface.
+# an interesting way to give help tips about elements in your user interface.
 # Your can display the help message in a "balloon" and a status bar widget.
 #
 

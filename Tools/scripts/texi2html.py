@@ -38,7 +38,7 @@
 # rpyron 2002-05-07
 # Robert Pyron <rpyron@alum.mit.edu>
 # 1. BUGFIX: In function makefile(), strip blanks from the nodename.
-#    This is necesary to match the behavior of parser.makeref() and
+#    This is necessary to match the behavior of parser.makeref() and
 #    parser.do_node().
 # 2. BUGFIX fixed KeyError in end_ifset (well, I may have just made
 #    it go away, rather than fix it)
@@ -1808,7 +1808,7 @@ class HTMLHelp:
             print>>fp, '<!-- This file defines the table of contents -->'
             print>>fp, '<HTML>'
             print>>fp, '<HEAD>'
-            print>>fp, ('<meta name="GENERATOR"'
+            print>>fp, ('<meta name="GENERATOR" '
                         'content="Microsoft&reg; HTML Help Workshop 4.1">')
             print>>fp, '<!-- Sitemap 1.0 -->'
             print>>fp, '</HEAD>'
@@ -1833,7 +1833,7 @@ class HTMLHelp:
             print>>fp, '<!-- This file defines the index -->'
             print>>fp, '<HTML>'
             print>>fp, '<HEAD>'
-            print>>fp, ('<meta name="GENERATOR"'
+            print>>fp, ('<meta name="GENERATOR" '
                         'content="Microsoft&reg; HTML Help Workshop 4.1">')
             print>>fp, '<!-- Sitemap 1.0 -->'
             print>>fp, '</HEAD>'

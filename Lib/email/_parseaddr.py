@@ -1,4 +1,4 @@
-# Copyright (C) 2002-2004 Python Software Foundation
+# Copyright (C) 2002-2007 Python Software Foundation
 # Contact: email-sig@python.org
 
 """Email address parsing code.
@@ -6,7 +6,14 @@
 Lifted directly from rfc822.py.  This should eventually be rewritten.
 """
 
-import time
+__all__ = [
+    'mktime_tz',
+    'parsedate',
+    'parsedate_tz',
+    'quote',
+    ]
+
+import time, calendar
 
 SPACE = ' '
 EMPTYSTRING = ''
@@ -100,9 +107,21 @@ def parsedate_tz(data):
         tss = int(tss)
     except ValueError:
         return None
+    # Check for a yy specified in two-digit format, then convert it to the
+    # appropriate four-digit format, according to the POSIX standard. RFC 822
+    # calls for a two-digit yy, but RFC 2822 (which obsoletes RFC 822)
+    # mandates a 4-digit yy. For more information, see the documentation for
+    # the time module.
+    if yy < 100:
+        # The year is between 1969 and 1999 (inclusive).
+        if yy > 68:
+            yy += 1900
+        # The year is between 2000 and 2068 (inclusive).
+        else:
+            yy += 2000
     tzoffset = None
     tz = tz.upper()
-    if _timezones.has_key(tz):
+    if tz in _timezones:
         tzoffset = _timezones[tz]
     else:
         try:
@@ -117,8 +136,8 @@ def parsedate_tz(data):
         else:
             tzsign = 1
         tzoffset = tzsign * ( (tzoffset//100)*3600 + (tzoffset % 100)*60)
-    tuple = (yy, mm, dd, thh, tmm, tss, 0, 1, 0, tzoffset)
-    return tuple
+    # Daylight Saving Time flag is set to -1, since DST is unknown.
+    return yy, mm, dd, thh, tmm, tss, 0, 1, -1, tzoffset
 
 
 def parsedate(data):
@@ -131,17 +150,22 @@ def parsedate(data):
 
 
 def mktime_tz(data):
-    """Turn a 10-tuple as returned by parsedate_tz() into a UTC timestamp."""
+    """Turn a 10-tuple as returned by parsedate_tz() into a POSIX timestamp."""
     if data[9] is None:
         # No zone info, so localtime is better assumption than GMT
         return time.mktime(data[:8] + (-1,))
     else:
-        t = time.mktime(data[:8] + (0,))
-        return t - data[9] - time.timezone
+        t = calendar.timegm(data)
+        return t - data[9]
 
 
 def quote(str):
-    """Add quotes around a string."""
+    """Prepare string to be used in a quoted string.
+
+    Turns backslash and double quote characters into quoted pairs.  These
+    are the only characters that need to be quoted inside a quoted string.
+    Does not add the surrounding double quotes.
+    """
     return str.replace('\\', '\\\\').replace('"', '\\"')
 
 
@@ -165,6 +189,7 @@ class AddrlistClass:
         self.pos = 0
         self.LWS = ' \t'
         self.CR = '\r\n'
+        self.FWS = self.LWS + self.CR
         self.atomends = self.specials + self.LWS + self.CR
         # Note that RFC 2822 now specifies `.' as obs-phrase, meaning that it
         # is obsolete syntax.  RFC 2822 requires that we recognize obsolete
@@ -298,7 +323,7 @@ class AddrlistClass:
                 aslist.append('.')
                 self.pos += 1
             elif self.field[self.pos] == '"':
-                aslist.append('"%s"' % self.getquote())
+                aslist.append('"%s"' % quote(self.getquote()))
             elif self.field[self.pos] in self.atomends:
                 break
             else:
@@ -360,6 +385,7 @@ class AddrlistClass:
                 break
             elif allowcomments and self.field[self.pos] == '(':
                 slist.append(self.getcomment())
+                continue        # have already advanced pos from getcomment
             elif self.field[self.pos] == '\\':
                 quote = True
             else:
@@ -410,7 +436,7 @@ class AddrlistClass:
         plist = []
 
         while self.pos < len(self.field):
-            if self.field[self.pos] in self.LWS:
+            if self.field[self.pos] in self.FWS:
                 self.pos += 1
             elif self.field[self.pos] == '"':
                 plist.append(self.getquote())

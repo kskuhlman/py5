@@ -6,10 +6,6 @@
 #include <sys/types.h>
 #include <string.h>
 
-#ifdef __ILEC400__
-#include "as400misc.h"
-#endif
-
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #endif
@@ -30,7 +26,7 @@
  * as best as is possible, but most imports will fail.
  *
  * Before any searches are done, the location of the executable is
- * determined.  If argv[0] has one or more slashs in it, it is used
+ * determined.  If argv[0] has one or more slashes in it, it is used
  * unchanged.  Otherwise, it must have been invoked from the shell's path,
  * so we search $PATH for the named executable and use that.  If the
  * executable was not found on $PATH (or there was no $PATH environment
@@ -95,29 +91,13 @@
  * process to find the installed Python tree.
  */
 
-#ifndef VERSION
-#if defined(__VMS)
-#define VERSION "2_1"
-#else
-#define VERSION "2.1"
-#endif
+#ifdef __cplusplus
+ extern "C" {
 #endif
 
-#ifndef VPATH
-#define VPATH "."
-#endif
 
-#ifndef PREFIX
-#define PREFIX "/usr/local"
-#endif
-
-#ifndef EXEC_PREFIX
-#define EXEC_PREFIX PREFIX
-#endif
-
-#ifndef PYTHONPATH
-#define PYTHONPATH PREFIX "/lib/python" VERSION ":" \
-              EXEC_PREFIX "/lib/python" VERSION "/lib-dynload"
+#if !defined(PREFIX) || !defined(EXEC_PREFIX) || !defined(VERSION) || !defined(VPATH)
+#error "PREFIX, EXEC_PREFIX, VERSION, and VPATH must be constant defined"
 #endif
 
 #ifndef LANDMARK
@@ -215,7 +195,7 @@ joinpath(char *buffer, char *stuff)
             buffer[n++] = SEP;
     }
     if (n > MAXPATHLEN)
-    	Py_FatalError("buffer overflow in getpath.c's joinpath()");
+        Py_FatalError("buffer overflow in getpath.c's joinpath()");
     k = strlen(stuff);
     if (n + k > MAXPATHLEN)
         k = MAXPATHLEN - n;
@@ -231,7 +211,11 @@ copy_absolute(char *path, char *p)
     if (p[0] == SEP)
         strcpy(path, p);
     else {
-        getcwd(path, MAXPATHLEN);
+        if (!getcwd(path, MAXPATHLEN)) {
+            /* unable to get the current directory */
+            strcpy(path, p);
+            return;
+        }
         if (p[0] == '.' && p[1] == SEP)
             p += 2;
         joinpath(path, p);
@@ -330,12 +314,25 @@ search_for_exec_prefix(char *argv0_path, char *home)
         return 1;
     }
 
-    /* Check to see if argv[0] is in the build directory */
+    /* Check to see if argv[0] is in the build directory. "pybuilddir.txt"
+       is written by setup.py and contains the relative path to the location
+       of shared library modules. */
     strcpy(exec_prefix, argv0_path);
-    joinpath(exec_prefix, "Modules/Setup");
+    joinpath(exec_prefix, "pybuilddir.txt");
     if (isfile(exec_prefix)) {
-        reduce(exec_prefix);
-        return -1;
+      FILE *f = fopen(exec_prefix, "r");
+      if (f == NULL)
+	errno = 0;
+      else {
+	char rel_builddir_path[MAXPATHLEN+1];
+	size_t n;
+	n = fread(rel_builddir_path, 1, MAXPATHLEN, f);
+	rel_builddir_path[n] = '\0';
+	fclose(f);
+	strcpy(exec_prefix, argv0_path);
+	joinpath(exec_prefix, rel_builddir_path);
+	return -1;
+      }
     }
 
     /* Search from argv0_path, until root is found */
@@ -362,46 +359,6 @@ search_for_exec_prefix(char *argv0_path, char *home)
 }
 
 
-#ifdef __ILEC400__
-/* calculate path for AS/400 (may change in the future) */
-static void
-calculate_path(void)
-{
-    static char delimiter[2] = {DELIM, '\0'};
-    static char separator[2] = {SEP, '\0'};
-    char *rtpypath = getenv("PYTHONPATH");
-    char *home = getpythonhome();
-    char *prog = Py_GetProgramName();
-    char *ptr;
-    char *buf;
-    size_t bufsz;
-    /* prefix and exec_prefix  */
-    strncpy(prefix, home, MAXPATHLEN);
-    strncpy(exec_prefix, home, MAXPATHLEN);
-    /* progpath (same as library) */
-    strncpy(progpath, prog, MAXPATHLEN);
-    ptr = strchr(progpath, SEP);
-    if (ptr)
-        *ptr = '\0';
-    /* path */
-    bufsz = strlen(prefix)*2 + 2 + strlen("libsite-packages") + 2;
-    if (rtpypath)
-        bufsz += strlen(rtpypath) + 1;
-    ptr = PyMem_Malloc(bufsz);
-    strcpy(ptr, prefix);
-    strcat(ptr, separator);
-    strcat(ptr, "lib");
-    strcat(ptr, delimiter);
-    strcat(ptr, prefix);
-    strcat(ptr, separator);
-    strcat(ptr, "site-packages");
-    if (rtpypath) {
-        strcat(ptr, delimiter);
-        strcat(ptr, rtpypath);
-    }
-    module_search_path = ptr;
-}
-#else
 static void
 calculate_path(void)
 {
@@ -425,16 +382,20 @@ calculate_path(void)
     NSModule pythonModule;
 #endif
 #ifdef __APPLE__
+#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_4
+    uint32_t nsexeclength = MAXPATHLEN;
+#else
     unsigned long nsexeclength = MAXPATHLEN;
 #endif
+#endif
 
-	/* If there is no slash in the argv0 path, then we have to
-	 * assume python is on the user's $PATH, since there's no
-	 * other way to find a directory to start the search from.  If
-	 * $PATH isn't exported, you lose.
-	 */
-	if (strchr(prog, SEP))
-		strncpy(progpath, prog, MAXPATHLEN);
+        /* If there is no slash in the argv0 path, then we have to
+         * assume python is on the user's $PATH, since there's no
+         * other way to find a directory to start the search from.  If
+         * $PATH isn't exported, you lose.
+         */
+        if (strchr(prog, SEP))
+                strncpy(progpath, prog, MAXPATHLEN);
 #ifdef __APPLE__
      /* On Mac OS X, if a script uses an interpreter of the form
       * "#!/opt/python2.3/bin/python", the kernel only passes "python"
@@ -449,44 +410,44 @@ calculate_path(void)
      else if(0 == _NSGetExecutablePath(progpath, &nsexeclength) && progpath[0] == SEP)
        ;
 #endif /* __APPLE__ */
-	else if (path) {
-		while (1) {
-			char *delim = strchr(path, DELIM);
+        else if (path) {
+                while (1) {
+                        char *delim = strchr(path, DELIM);
 
-			if (delim) {
-				size_t len = delim - path;
-				if (len > MAXPATHLEN)
-					len = MAXPATHLEN;
-				strncpy(progpath, path, len);
-				*(progpath + len) = '\0';
-			}
-			else
-				strncpy(progpath, path, MAXPATHLEN);
+                        if (delim) {
+                                size_t len = delim - path;
+                                if (len > MAXPATHLEN)
+                                        len = MAXPATHLEN;
+                                strncpy(progpath, path, len);
+                                *(progpath + len) = '\0';
+                        }
+                        else
+                                strncpy(progpath, path, MAXPATHLEN);
 
-			joinpath(progpath, prog);
-			if (isxfile(progpath))
-				break;
+                        joinpath(progpath, prog);
+                        if (isxfile(progpath))
+                                break;
 
-			if (!delim) {
-				progpath[0] = '\0';
-				break;
-			}
-			path = delim + 1;
-		}
-	}
-	else
-		progpath[0] = '\0';
-	if (progpath[0] != SEP)
-		absolutize(progpath);
-	strncpy(argv0_path, progpath, MAXPATHLEN);
-	argv0_path[MAXPATHLEN] = '\0';
+                        if (!delim) {
+                                progpath[0] = '\0';
+                                break;
+                        }
+                        path = delim + 1;
+                }
+        }
+        else
+                progpath[0] = '\0';
+        if (progpath[0] != SEP && progpath[0] != '\0')
+                absolutize(progpath);
+        strncpy(argv0_path, progpath, MAXPATHLEN);
+        argv0_path[MAXPATHLEN] = '\0';
 
 #ifdef WITH_NEXT_FRAMEWORK
-	/* On Mac OS X we have a special case if we're running from a framework.
-	** This is because the python home should be set relative to the library,
-	** which is in the framework, not relative to the executable, which may
-	** be outside of the framework. Except when we're in the build directory...
-	*/
+        /* On Mac OS X we have a special case if we're running from a framework.
+        ** This is because the python home should be set relative to the library,
+        ** which is in the framework, not relative to the executable, which may
+        ** be outside of the framework. Except when we're in the build directory...
+        */
     pythonModule = NSModuleForSymbol(NSLookupAndBindSymbol("_Py_Initialize"));
     /* Use dylib functions to find out where the framework was loaded from */
     buf = (char *)NSLibraryNameForModule(pythonModule);
@@ -506,7 +467,7 @@ calculate_path(void)
         if (!ismodule(argv0_path)) {
                 /* We are in the build directory so use the name of the
                    executable - we know that the absolute path is passed */
-                strncpy(argv0_path, prog, MAXPATHLEN);
+                strncpy(argv0_path, progpath, MAXPATHLEN);
         }
         else {
                 /* Use the location of the library as the progpath */
@@ -560,7 +521,7 @@ calculate_path(void)
     else
         strncpy(zip_path, PREFIX, MAXPATHLEN);
     joinpath(zip_path, "lib/python00.zip");
-    bufsz = strlen(zip_path);	/* Replace "00" with version */
+    bufsz = strlen(zip_path);   /* Replace "00" with version */
     zip_path[bufsz - 6] = VERSION[0];
     zip_path[bufsz - 5] = VERSION[2];
 
@@ -606,7 +567,7 @@ calculate_path(void)
     bufsz += strlen(exec_prefix) + 1;
 
     /* This is the only malloc call in this file */
-    buf = PyMem_Malloc(bufsz);
+    buf = (char *)PyMem_Malloc(bufsz);
 
     if (buf == NULL) {
         /* We can't exit, so print a warning and limp along */
@@ -636,7 +597,10 @@ calculate_path(void)
 
             if (defpath[0] != SEP) {
                 strcat(buf, prefix);
-                strcat(buf, separator);
+                if (prefixsz >= 2 && prefix[prefixsz - 2] != SEP &&
+                    defpath[0] != (delim ? DELIM : L'\0')) {  /* not empty */
+                    strcat(buf, separator);
+                }
             }
 
             if (delim) {
@@ -668,6 +632,10 @@ calculate_path(void)
     if (pfound > 0) {
         reduce(prefix);
         reduce(prefix);
+        /* The prefix is the root directory, but reduce() chopped
+         * off the "/". */
+        if (!prefix[0])
+                strcpy(prefix, separator);
     }
     else
         strncpy(prefix, PREFIX, MAXPATHLEN);
@@ -676,12 +644,13 @@ calculate_path(void)
         reduce(exec_prefix);
         reduce(exec_prefix);
         reduce(exec_prefix);
+        if (!exec_prefix[0])
+                strcpy(exec_prefix, separator);
     }
     else
         strncpy(exec_prefix, EXEC_PREFIX, MAXPATHLEN);
 }
 
-#endif /* __ILEC400__ */
 
 /* External interface */
 
@@ -716,3 +685,9 @@ Py_GetProgramFullPath(void)
         calculate_path();
     return progpath;
 }
+
+
+#ifdef __cplusplus
+}
+#endif
+

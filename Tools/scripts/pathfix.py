@@ -20,7 +20,7 @@
 # into a program for a different change to Python programs...
 
 import sys
-import regex
+import re
 import os
 from stat import *
 import getopt
@@ -59,7 +59,7 @@ def main():
             if fix(arg): bad = 1
     sys.exit(bad)
 
-ispythonprog = regex.compile('^[a-zA-Z0-9_]+\.py$')
+ispythonprog = re.compile('^[a-zA-Z0-9_]+\.py$')
 def ispython(name):
     return ispythonprog.match(name) >= 0
 
@@ -135,7 +135,7 @@ def fix(filename):
     except os.error, msg:
         err('%s: rename failed (%r)\n' % (filename, msg))
         return 1
-    # Return succes
+    # Return success
     return 0
 
 def fixline(line):

@@ -5,6 +5,43 @@
         ((PyWeakReference **) PyObject_GET_WEAKREFS_LISTPTR(o))
 
 
+static int
+is_dead_weakref(PyObject *value)
+{
+    if (!PyWeakref_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "not a weakref");
+        return -1;
+    }
+    return PyWeakref_GET_OBJECT(value) == Py_None;
+}
+
+PyDoc_STRVAR(remove_dead_weakref__doc__,
+"_remove_dead_weakref(dict, key) -- atomically remove key from dict\n"
+"if it points to a dead weakref.");
+
+static PyObject *
+remove_dead_weakref(PyObject *self, PyObject *args)
+{
+    PyObject *dct, *key;
+
+    if (!PyArg_ParseTuple(args, "O!O:_remove_dead_weakref",
+                          &PyDict_Type, &dct, &key)) {
+        return NULL;
+    }
+    if (_PyDict_DelItemIf(dct, key, is_dead_weakref) < 0) {
+        if (PyErr_ExceptionMatches(PyExc_KeyError))
+            /* This function is meant to allow safe weak-value dicts
+               with GC in another thread (see issue #28427), so it's
+               ok if the key doesn't exist anymore.
+               */
+            PyErr_Clear();
+        else
+            return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+
 PyDoc_STRVAR(weakref_getweakrefcount__doc__,
 "getweakrefcount(object) -- return the number of weak references\n"
 "to 'object'.");
@@ -14,10 +51,10 @@ weakref_getweakrefcount(PyObject *self, PyObject *object)
 {
     PyObject *result = NULL;
 
-    if (PyType_SUPPORTS_WEAKREFS(object->ob_type)) {
+    if (PyType_SUPPORTS_WEAKREFS(Py_TYPE(object))) {
         PyWeakReference **list = GET_WEAKREFS_LISTPTR(object);
 
-        result = PyInt_FromLong(_PyWeakref_GetWeakrefCount(*list));
+        result = PyInt_FromSsize_t(_PyWeakref_GetWeakrefCount(*list));
     }
     else
         result = PyInt_FromLong(0);
@@ -35,14 +72,14 @@ weakref_getweakrefs(PyObject *self, PyObject *object)
 {
     PyObject *result = NULL;
 
-    if (PyType_SUPPORTS_WEAKREFS(object->ob_type)) {
+    if (PyType_SUPPORTS_WEAKREFS(Py_TYPE(object))) {
         PyWeakReference **list = GET_WEAKREFS_LISTPTR(object);
-        long count = _PyWeakref_GetWeakrefCount(*list);
+        Py_ssize_t count = _PyWeakref_GetWeakrefCount(*list);
 
         result = PyList_New(count);
         if (result != NULL) {
             PyWeakReference *current = *list;
-            long i;
+            Py_ssize_t i;
             for (i = 0; i < count; ++i) {
                 PyList_SET_ITEM(result, i, (PyObject *) current);
                 Py_INCREF(current);
@@ -84,6 +121,8 @@ weakref_functions[] =  {
      weakref_getweakrefs__doc__},
     {"proxy",           weakref_proxy,                  METH_VARARGS,
      weakref_proxy__doc__},
+    {"_remove_dead_weakref", remove_dead_weakref,       METH_VARARGS,
+     remove_dead_weakref__doc__},
     {NULL, NULL, 0, NULL}
 };
 

@@ -151,9 +151,9 @@ class RightArrow(LeftArrow):
         return arrow, text
 
     def _x(self):
-        coords = self._canvas.bbox(self._TAG)
+        coords = self._canvas.coords(self._TAG)
         assert coords
-        return coords[2] - 6                      # BAW: kludge
+        return coords[0] + self._ARROWWIDTH
 
 
 
@@ -268,7 +268,7 @@ class StripWidget:
         else:
             # decimal
             text = repr(coloraxis)
-        # move the arrow, and set it's text
+        # move the arrow, and set its text
         if coloraxis <= 128:
             # use the left arrow
             self.__leftarrow.set_text(text)

@@ -18,21 +18,82 @@ class PosReturn:
             self.pos = len(exc.object)
         return (u"<?>", oldpos)
 
+# A UnicodeEncodeError object with a bad start attribute
+class BadStartUnicodeEncodeError(UnicodeEncodeError):
+    def __init__(self):
+        UnicodeEncodeError.__init__(self, "ascii", u"", 0, 1, "bad")
+        self.start = []
+
+# A UnicodeEncodeError object with a bad object attribute
+class BadObjectUnicodeEncodeError(UnicodeEncodeError):
+    def __init__(self):
+        UnicodeEncodeError.__init__(self, "ascii", u"", 0, 1, "bad")
+        self.object = []
+
+# A UnicodeDecodeError object without an end attribute
+class NoEndUnicodeDecodeError(UnicodeDecodeError):
+    def __init__(self):
+        UnicodeDecodeError.__init__(self, "ascii", "", 0, 1, "bad")
+        del self.end
+
+# A UnicodeDecodeError object with a bad object attribute
+class BadObjectUnicodeDecodeError(UnicodeDecodeError):
+    def __init__(self):
+        UnicodeDecodeError.__init__(self, "ascii", "", 0, 1, "bad")
+        self.object = []
+
+# A UnicodeTranslateError object without a start attribute
+class NoStartUnicodeTranslateError(UnicodeTranslateError):
+    def __init__(self):
+        UnicodeTranslateError.__init__(self, u"", 0, 1, "bad")
+        del self.start
+
+# A UnicodeTranslateError object without an end attribute
+class NoEndUnicodeTranslateError(UnicodeTranslateError):
+    def __init__(self):
+        UnicodeTranslateError.__init__(self,  u"", 0, 1, "bad")
+        del self.end
+
+# A UnicodeTranslateError object without an object attribute
+class NoObjectUnicodeTranslateError(UnicodeTranslateError):
+    def __init__(self):
+        UnicodeTranslateError.__init__(self, u"", 0, 1, "bad")
+        del self.object
+
 class CodecCallbackTest(unittest.TestCase):
 
     def test_xmlcharrefreplace(self):
         # replace unencodable characters which numeric character entities.
         # For ascii, latin-1 and charmaps this is completely implemented
         # in C and should be reasonably fast.
-        s = u"\u30b9\u30d1\u30e2 \xe4nd eggs"
+        s = u"\u30b9\u30d1\u30e2 \xe4nd egg\u0161"
         self.assertEqual(
             s.encode("ascii", "xmlcharrefreplace"),
-            "&#12473;&#12497;&#12514; &#228;nd eggs"
+            "&#12473;&#12497;&#12514; &#228;nd egg&#353;"
         )
         self.assertEqual(
             s.encode("latin-1", "xmlcharrefreplace"),
-            "&#12473;&#12497;&#12514; \xe4nd eggs"
+            "&#12473;&#12497;&#12514; \xe4nd egg&#353;"
         )
+        self.assertEqual(
+            s.encode("iso-8859-15", "xmlcharrefreplace"),
+            "&#12473;&#12497;&#12514; \xe4nd egg\xa8"
+        )
+
+    def test_xmlcharrefreplace_with_surrogates(self):
+        tests = [(u'\U0001f49d', '&#128157;'),
+                 (u'\ud83d', '&#55357;'),
+                 (u'\udc9d', '&#56477;'),
+                ]
+        if u'\ud83d\udc9d' != u'\U0001f49d':
+            tests += [(u'\ud83d\udc9d', '&#55357;&#56477;')]
+        for encoding in ['ascii', 'latin1', 'iso-8859-15']:
+            for s, exp in tests:
+                self.assertEqual(s.encode(encoding, 'xmlcharrefreplace'),
+                                 exp, msg='%r.encode(%r)' % (s, encoding))
+                self.assertEqual((s+'X').encode(encoding, 'xmlcharrefreplace'),
+                                 exp+'X',
+                                 msg='%r.encode(%r)' % (s + 'X', encoding))
 
     def test_xmlcharnamereplace(self):
         # This time use a named character entity for unencodable
@@ -67,7 +128,7 @@ class CodecCallbackTest(unittest.TestCase):
         # useful that the error handler is not called for every single
         # unencodable character, but for a complete sequence of
         # unencodable characters, otherwise we would output many
-        # unneccessary escape sequences.
+        # unnecessary escape sequences.
 
         def uninamereplace(exc):
             if not isinstance(exc, UnicodeEncodeError):
@@ -111,28 +172,30 @@ class CodecCallbackTest(unittest.TestCase):
             sout += "\\U%08x" % sys.maxunicode
         self.assertEqual(sin.encode("iso-8859-15", "backslashreplace"), sout)
 
-    def test_relaxedutf8(self):
-        # This is the test for a decoding callback handler,
-        # that relaxes the UTF-8 minimal encoding restriction.
-        # A null byte that is encoded as "\xc0\x80" will be
-        # decoded as a null byte. All other illegal sequences
-        # will be handled strictly.
+    def test_decoding_callbacks(self):
+        # This is a test for a decoding callback handler
+        # that allows the decoding of the invalid sequence
+        # "\xc0\x80" and returns "\x00" instead of raising an error.
+        # All other illegal sequences will be handled strictly.
         def relaxedutf8(exc):
             if not isinstance(exc, UnicodeDecodeError):
                 raise TypeError("don't know how to handle %r" % exc)
-            if exc.object[exc.start:exc.end].startswith("\xc0\x80"):
+            if exc.object[exc.start:exc.start+2] == "\xc0\x80":
                 return (u"\x00", exc.start+2) # retry after two bytes
             else:
                 raise exc
 
-        codecs.register_error(
-            "test.relaxedutf8", relaxedutf8)
+        codecs.register_error("test.relaxedutf8", relaxedutf8)
 
+        # all the "\xc0\x80" will be decoded to "\x00"
         sin = "a\x00b\xc0\x80c\xc3\xbc\xc0\x80\xc0\x80"
         sout = u"a\x00b\x00c\xfc\x00\x00"
         self.assertEqual(sin.decode("utf-8", "test.relaxedutf8"), sout)
+
+        # "\xc0\x81" is not valid and a UnicodeDecodeError will be raised
         sin = "\xc0\x80\xc0\x81"
-        self.assertRaises(UnicodeError, sin.decode, "utf-8", "test.relaxedutf8")
+        self.assertRaises(UnicodeDecodeError, sin.decode,
+                          "utf-8", "test.relaxedutf8")
 
     def test_charmapencode(self):
         # For charmap encodings the replacement string will be
@@ -142,7 +205,7 @@ class CodecCallbackTest(unittest.TestCase):
         charmap = dict([ (ord(c), 2*c.upper()) for c in "abcdefgh"])
         sin = u"abc"
         sout = "AABBCC"
-        self.assertEquals(codecs.charmap_encode(sin, "strict", charmap)[0], sout)
+        self.assertEqual(codecs.charmap_encode(sin, "strict", charmap)[0], sout)
 
         sin = u"abcA"
         self.assertRaises(UnicodeError, codecs.charmap_encode, sin, "strict", charmap)
@@ -150,13 +213,42 @@ class CodecCallbackTest(unittest.TestCase):
         charmap[ord("?")] = "XYZ"
         sin = u"abcDEF"
         sout = "AABBCCXYZXYZXYZ"
-        self.assertEquals(codecs.charmap_encode(sin, "replace", charmap)[0], sout)
+        self.assertEqual(codecs.charmap_encode(sin, "replace", charmap)[0], sout)
 
         charmap[ord("?")] = u"XYZ"
         self.assertRaises(TypeError, codecs.charmap_encode, sin, "replace", charmap)
 
         charmap[ord("?")] = u"XYZ"
         self.assertRaises(TypeError, codecs.charmap_encode, sin, "replace", charmap)
+
+    def test_decodeunicodeinternal(self):
+        self.assertRaises(
+            UnicodeDecodeError,
+            "\x00\x00\x00\x00\x00".decode,
+            "unicode-internal",
+        )
+        if sys.maxunicode > 0xffff:
+            def handler_unicodeinternal(exc):
+                if not isinstance(exc, UnicodeDecodeError):
+                    raise TypeError("don't know how to handle %r" % exc)
+                return (u"\x01", 1)
+
+            self.assertEqual(
+                "\x00\x00\x00\x00\x00".decode("unicode-internal", "ignore"),
+                u"\u0000"
+            )
+
+            self.assertEqual(
+                "\x00\x00\x00\x00\x00".decode("unicode-internal", "replace"),
+                u"\u0000\ufffd"
+            )
+
+            codecs.register_error("test.hui", handler_unicodeinternal)
+
+            self.assertEqual(
+                "\x00\x00\x00\x00\x00".decode("unicode-internal", "test.hui"),
+                u"\u0000\u0001\u0000"
+            )
 
     def test_callbacks(self):
         def handler1(exc):
@@ -189,12 +281,12 @@ class CodecCallbackTest(unittest.TestCase):
 
         self.assertEqual(
             "\\u3042\u3xxx".decode("unicode-escape", "test.handler1"),
-            u"\u3042[<92><117><51><120>]xx"
+            u"\u3042[<92><117><51>]xxx"
         )
 
         self.assertEqual(
             "\\u3042\u3xx".decode("unicode-escape", "test.handler1"),
-            u"\u3042[<92><117><51><120><120>]"
+            u"\u3042[<92><117><51>]xx"
         )
 
         self.assertEqual(
@@ -214,7 +306,8 @@ class CodecCallbackTest(unittest.TestCase):
 
     def test_longstrings(self):
         # test long strings to check for memory overflow problems
-        errors = [ "strict", "ignore", "replace", "xmlcharrefreplace", "backslashreplace"]
+        errors = [ "strict", "ignore", "replace", "xmlcharrefreplace",
+                   "backslashreplace"]
         # register the handlers under different names,
         # to prevent the codec from recognizing the name
         for err in errors:
@@ -222,7 +315,8 @@ class CodecCallbackTest(unittest.TestCase):
         l = 1000
         errors += [ "test." + err for err in errors ]
         for uni in [ s*l for s in (u"x", u"\u3042", u"a\xe4") ]:
-            for enc in ("ascii", "latin-1", "iso-8859-1", "iso-8859-15", "utf-8", "utf-7", "utf-16"):
+            for enc in ("ascii", "latin-1", "iso-8859-1", "iso-8859-15",
+                        "utf-8", "utf-7", "utf-16", "utf-32"):
                 for err in errors:
                     try:
                         uni.encode(enc, err)
@@ -252,7 +346,7 @@ class CodecCallbackTest(unittest.TestCase):
 
         # check with the correct number and type of arguments
         exc = exctype(*args)
-        self.assertEquals(str(exc), msg)
+        self.assertEqual(str(exc), msg)
 
     def test_unicodeencodeerror(self):
         self.check_exceptionobjectargs(
@@ -347,6 +441,16 @@ class CodecCallbackTest(unittest.TestCase):
             codecs.strict_errors,
             UnicodeEncodeError("ascii", u"\u3042", 0, 1, "ouch")
         )
+        self.assertRaises(
+            UnicodeDecodeError,
+            codecs.strict_errors,
+            UnicodeDecodeError("ascii", "\xff", 0, 1, "ouch")
+        )
+        self.assertRaises(
+            UnicodeTranslateError,
+            codecs.strict_errors,
+            UnicodeTranslateError(u"\u3042", 0, 1, "ouch")
+        )
 
     def test_badandgoodignoreexceptions(self):
         # "ignore" complains about a non-exception passed in
@@ -362,17 +466,20 @@ class CodecCallbackTest(unittest.TestCase):
            UnicodeError("ouch")
         )
         # If the correct exception is passed in, "ignore" returns an empty replacement
-        self.assertEquals(
-            codecs.ignore_errors(UnicodeEncodeError("ascii", u"\u3042", 0, 1, "ouch")),
-            (u"", 1)
+        self.assertEqual(
+            codecs.ignore_errors(
+                UnicodeEncodeError("ascii", u"a\u3042b", 1, 2, "ouch")),
+            (u"", 2)
         )
-        self.assertEquals(
-            codecs.ignore_errors(UnicodeDecodeError("ascii", "\xff", 0, 1, "ouch")),
-            (u"", 1)
+        self.assertEqual(
+            codecs.ignore_errors(
+                UnicodeDecodeError("ascii", "a\xffb", 1, 2, "ouch")),
+            (u"", 2)
         )
-        self.assertEquals(
-            codecs.ignore_errors(UnicodeTranslateError(u"\u3042", 0, 1, "ouch")),
-            (u"", 1)
+        self.assertEqual(
+            codecs.ignore_errors(
+                UnicodeTranslateError(u"a\u3042b", 1, 2, "ouch")),
+            (u"", 2)
         )
 
     def test_badandgoodreplaceexceptions(self):
@@ -388,18 +495,31 @@ class CodecCallbackTest(unittest.TestCase):
            codecs.replace_errors,
            UnicodeError("ouch")
         )
+        self.assertRaises(
+            TypeError,
+            codecs.replace_errors,
+            BadObjectUnicodeEncodeError()
+        )
+        self.assertRaises(
+            TypeError,
+            codecs.replace_errors,
+            BadObjectUnicodeDecodeError()
+        )
         # With the correct exception, "replace" returns an "?" or u"\ufffd" replacement
-        self.assertEquals(
-            codecs.replace_errors(UnicodeEncodeError("ascii", u"\u3042", 0, 1, "ouch")),
-            (u"?", 1)
+        self.assertEqual(
+            codecs.replace_errors(
+                UnicodeEncodeError("ascii", u"a\u3042b", 1, 2, "ouch")),
+            (u"?", 2)
         )
-        self.assertEquals(
-            codecs.replace_errors(UnicodeDecodeError("ascii", "\xff", 0, 1, "ouch")),
-            (u"\ufffd", 1)
+        self.assertEqual(
+            codecs.replace_errors(
+                UnicodeDecodeError("ascii", "a\xffb", 1, 2, "ouch")),
+            (u"\ufffd", 2)
         )
-        self.assertEquals(
-            codecs.replace_errors(UnicodeTranslateError(u"\u3042", 0, 1, "ouch")),
-            (u"\ufffd", 1)
+        self.assertEqual(
+            codecs.replace_errors(
+                UnicodeTranslateError(u"a\u3042b", 1, 2, "ouch")),
+            (u"\ufffd", 2)
         )
 
     def test_badandgoodxmlcharrefreplaceexceptions(self):
@@ -427,9 +547,17 @@ class CodecCallbackTest(unittest.TestCase):
             UnicodeTranslateError(u"\u3042", 0, 1, "ouch")
         )
         # Use the correct exception
-        self.assertEquals(
-            codecs.xmlcharrefreplace_errors(UnicodeEncodeError("ascii", u"\u3042", 0, 1, "ouch")),
-            (u"&#%d;" % 0x3042, 1)
+        cs = (0, 1, 9, 10, 99, 100, 999, 1000, 9999, 10000)
+        cs += (0xdfff, 0xd800)
+        s = u"".join(unichr(c) for c in cs)
+        s += u"\U0001869f\U000186a0\U000f423f\U000f4240"
+        cs += (99999, 100000, 999999, 1000000)
+        self.assertEqual(
+            codecs.xmlcharrefreplace_errors(
+                UnicodeEncodeError("ascii", u"a" + s + u"b",
+                                   1, 1 + len(s), "ouch")
+            ),
+            (u"".join(u"&#%d;" % c for c in cs), 1 + len(s))
         )
 
     def test_badandgoodbackslashreplaceexceptions(self):
@@ -457,34 +585,34 @@ class CodecCallbackTest(unittest.TestCase):
             UnicodeTranslateError(u"\u3042", 0, 1, "ouch")
         )
         # Use the correct exception
-        self.assertEquals(
-            codecs.backslashreplace_errors(UnicodeEncodeError("ascii", u"\u3042", 0, 1, "ouch")),
-            (u"\\u3042", 1)
-        )
-        self.assertEquals(
-            codecs.backslashreplace_errors(UnicodeEncodeError("ascii", u"\x00", 0, 1, "ouch")),
-            (u"\\x00", 1)
-        )
-        self.assertEquals(
-            codecs.backslashreplace_errors(UnicodeEncodeError("ascii", u"\xff", 0, 1, "ouch")),
-            (u"\\xff", 1)
-        )
-        self.assertEquals(
-            codecs.backslashreplace_errors(UnicodeEncodeError("ascii", u"\u0100", 0, 1, "ouch")),
-            (u"\\u0100", 1)
-        )
-        self.assertEquals(
-            codecs.backslashreplace_errors(UnicodeEncodeError("ascii", u"\uffff", 0, 1, "ouch")),
-            (u"\\uffff", 1)
-        )
-        if sys.maxunicode>0xffff:
-            self.assertEquals(
-                codecs.backslashreplace_errors(UnicodeEncodeError("ascii", u"\U00010000", 0, 1, "ouch")),
-                (u"\\U00010000", 1)
-            )
-            self.assertEquals(
-                codecs.backslashreplace_errors(UnicodeEncodeError("ascii", u"\U0010ffff", 0, 1, "ouch")),
-                (u"\\U0010ffff", 1)
+        tests = [
+            (u"\u3042", u"\\u3042"),
+            (u"\n", u"\\x0a"),
+            (u"a", u"\\x61"),
+            (u"\x00", u"\\x00"),
+            (u"\xff", u"\\xff"),
+            (u"\u0100", u"\\u0100"),
+            (u"\uffff", u"\\uffff"),
+            # Lone surrogates
+            (u"\ud800", u"\\ud800"),
+            (u"\udfff", u"\\udfff"),
+        ]
+        if sys.maxunicode > 0xffff:
+            tests += [
+                (u"\U00010000", u"\\U00010000"),
+                (u"\U0010ffff", u"\\U0010ffff"),
+            ]
+        else:
+            tests += [
+                (u"\U00010000", u"\\ud800\\udc00"),
+                (u"\U0010ffff", u"\\udbff\\udfff"),
+            ]
+        for s, r in tests:
+            self.assertEqual(
+                codecs.backslashreplace_errors(
+                    UnicodeEncodeError("ascii", u"a" + s + u"b",
+                                       1, 1 + len(s), "ouch")),
+                (r, 1 + len(s))
             )
 
     def test_badhandlerresults(self):
@@ -492,7 +620,7 @@ class CodecCallbackTest(unittest.TestCase):
         encs = ("ascii", "latin-1", "iso-8859-1", "iso-8859-15")
 
         for res in results:
-            codecs.register_error("test.badhandler", lambda: res)
+            codecs.register_error("test.badhandler", lambda x: res)
             for enc in encs:
                 self.assertRaises(
                     TypeError,
@@ -503,7 +631,8 @@ class CodecCallbackTest(unittest.TestCase):
             for (enc, bytes) in (
                 ("ascii", "\xff"),
                 ("utf-8", "\xff"),
-                ("utf-7", "+x-")
+                ("utf-7", "+x-"),
+                ("unicode-internal", "\x00"),
             ):
                 self.assertRaises(
                     TypeError,
@@ -513,14 +642,14 @@ class CodecCallbackTest(unittest.TestCase):
                 )
 
     def test_lookup(self):
-        self.assertEquals(codecs.strict_errors, codecs.lookup_error("strict"))
-        self.assertEquals(codecs.ignore_errors, codecs.lookup_error("ignore"))
-        self.assertEquals(codecs.strict_errors, codecs.lookup_error("strict"))
-        self.assertEquals(
+        self.assertEqual(codecs.strict_errors, codecs.lookup_error("strict"))
+        self.assertEqual(codecs.ignore_errors, codecs.lookup_error("ignore"))
+        self.assertEqual(codecs.strict_errors, codecs.lookup_error("strict"))
+        self.assertEqual(
             codecs.xmlcharrefreplace_errors,
             codecs.lookup_error("xmlcharrefreplace")
         )
-        self.assertEquals(
+        self.assertEqual(
             codecs.backslashreplace_errors,
             codecs.lookup_error("backslashreplace")
         )
@@ -546,6 +675,11 @@ class CodecCallbackTest(unittest.TestCase):
         # Python/codecs.c::PyCodec_RegisterError()
         self.assertRaises(TypeError, codecs.register_error, 42)
         self.assertRaises(TypeError, codecs.register_error, "test.dummy", 42)
+
+    def test_badlookupcall(self):
+        # enhance coverage of:
+        # Modules/_codecsmodule.c::lookup_error()
+        self.assertRaises(TypeError, codecs.lookup_error)
 
     def test_unknownhandler(self):
         # enhance coverage of:
@@ -591,11 +725,11 @@ class CodecCallbackTest(unittest.TestCase):
 
         # Valid negative position
         handler.pos = -1
-        self.assertEquals("\xff0".decode("ascii", "test.posreturn"), u"<?>0")
+        self.assertEqual("\xff0".decode("ascii", "test.posreturn"), u"<?>0")
 
         # Valid negative position
         handler.pos = -2
-        self.assertEquals("\xff0".decode("ascii", "test.posreturn"), u"<?><?>")
+        self.assertEqual("\xff0".decode("ascii", "test.posreturn"), u"<?><?>")
 
         # Negative position out of bounds
         handler.pos = -3
@@ -603,11 +737,11 @@ class CodecCallbackTest(unittest.TestCase):
 
         # Valid positive position
         handler.pos = 1
-        self.assertEquals("\xff0".decode("ascii", "test.posreturn"), u"<?>0")
+        self.assertEqual("\xff0".decode("ascii", "test.posreturn"), u"<?>0")
 
         # Largest valid positive position (one beyond end of input)
         handler.pos = 2
-        self.assertEquals("\xff0".decode("ascii", "test.posreturn"), u"<?>")
+        self.assertEqual("\xff0".decode("ascii", "test.posreturn"), u"<?>")
 
         # Invalid positive position
         handler.pos = 3
@@ -615,14 +749,14 @@ class CodecCallbackTest(unittest.TestCase):
 
         # Restart at the "0"
         handler.pos = 6
-        self.assertEquals("\\uyyyy0".decode("raw-unicode-escape", "test.posreturn"), u"<?>0")
+        self.assertEqual("\\uyyyy0".decode("raw-unicode-escape", "test.posreturn"), u"<?>0")
 
         class D(dict):
             def __getitem__(self, key):
                 raise ValueError
         self.assertRaises(UnicodeError, codecs.charmap_decode, "\xff", "strict", {0xff: None})
         self.assertRaises(ValueError, codecs.charmap_decode, "\xff", "strict", D())
-        self.assertRaises(TypeError, codecs.charmap_decode, "\xff", "strict", {0xff: sys.maxunicode+1})
+        self.assertRaises(TypeError, codecs.charmap_decode, "\xff", "strict", {0xff: 0x110000})
 
     def test_encodehelper(self):
         # enhance coverage of:
@@ -645,11 +779,11 @@ class CodecCallbackTest(unittest.TestCase):
 
         # Valid negative position
         handler.pos = -1
-        self.assertEquals(u"\xff0".encode("ascii", "test.posreturn"), "<?>0")
+        self.assertEqual(u"\xff0".encode("ascii", "test.posreturn"), "<?>0")
 
         # Valid negative position
         handler.pos = -2
-        self.assertEquals(u"\xff0".encode("ascii", "test.posreturn"), "<?><?>")
+        self.assertEqual(u"\xff0".encode("ascii", "test.posreturn"), "<?><?>")
 
         # Negative position out of bounds
         handler.pos = -3
@@ -657,11 +791,11 @@ class CodecCallbackTest(unittest.TestCase):
 
         # Valid positive position
         handler.pos = 1
-        self.assertEquals(u"\xff0".encode("ascii", "test.posreturn"), "<?>0")
+        self.assertEqual(u"\xff0".encode("ascii", "test.posreturn"), "<?>0")
 
         # Largest valid positive position (one beyond end of input
         handler.pos = 2
-        self.assertEquals(u"\xff0".encode("ascii", "test.posreturn"), "<?>")
+        self.assertEqual(u"\xff0".encode("ascii", "test.posreturn"), "<?>")
 
         # Invalid positive position
         handler.pos = 3
@@ -701,6 +835,26 @@ class CodecCallbackTest(unittest.TestCase):
         for n in (1, 10, 100, 1000):
             text = u'abc<def>ghi'*n
             text.translate(charmap)
+
+    def test_fake_error_class(self):
+        handlers = [
+            codecs.strict_errors,
+            codecs.ignore_errors,
+            codecs.replace_errors,
+            codecs.backslashreplace_errors,
+            codecs.xmlcharrefreplace_errors,
+        ]
+        for cls in UnicodeEncodeError, UnicodeDecodeError, UnicodeTranslateError:
+            class FakeUnicodeError(str):
+                __class__ = cls
+            for handler in handlers:
+                self.assertRaises(TypeError, handler, FakeUnicodeError())
+            class FakeUnicodeError(Exception):
+                __class__ = cls
+            for handler in handlers:
+                with self.assertRaises((TypeError, FakeUnicodeError)):
+                    handler(FakeUnicodeError())
+
 
 def test_main():
     test.test_support.run_unittest(CodecCallbackTest)

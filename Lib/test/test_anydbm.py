@@ -1,15 +1,16 @@
-#! /usr/bin/env python
 """Test script for the anydbm module
    based on testdumbdbm.py
 """
 
 import os
 import unittest
-import anydbm
 import glob
 from test import test_support
 
 _fname = test_support.TESTFN
+
+# Silence Py3k warning
+anydbm = test_support.import_module('anydbm', deprecated=True)
 
 def _delete_files():
     # we don't know the precise name the underlying database uses

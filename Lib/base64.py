@@ -7,6 +7,7 @@
 
 import re
 import struct
+import string
 import binascii
 
 
@@ -52,7 +53,7 @@ def b64encode(s, altchars=None):
     # Strip off the trailing newline
     encoded = binascii.b2a_base64(s)[:-1]
     if altchars is not None:
-        return _translate(encoded, {'+': altchars[0], '/': altchars[1]})
+        return encoded.translate(string.maketrans(b'+/', altchars[:2]))
     return encoded
 
 
@@ -63,12 +64,13 @@ def b64decode(s, altchars=None):
     length 2 (additional characters are ignored) which specifies the
     alternative alphabet used instead of the '+' and '/' characters.
 
-    The decoded string is returned.  A TypeError is raised if s were
-    incorrectly padded or if there are non-alphabet characters present in the
-    string.
+    The decoded string is returned.  A TypeError is raised if s is
+    incorrectly padded.  Characters that are neither in the normal base-64
+    alphabet nor the alternative alphabet are discarded prior to the padding
+    check.
     """
     if altchars is not None:
-        s = _translate(s, {altchars[0]: '+', altchars[1]: '/'})
+        s = s.translate(string.maketrans(altchars[:2], '+/'))
     try:
         return binascii.a2b_base64(s)
     except binascii.Error, msg:
@@ -86,30 +88,35 @@ def standard_b64encode(s):
 def standard_b64decode(s):
     """Decode a string encoded with the standard Base64 alphabet.
 
-    s is the string to decode.  The decoded string is returned.  A TypeError
-    is raised if the string is incorrectly padded or if there are non-alphabet
-    characters present in the string.
+    Argument s is the string to decode.  The decoded string is returned.  A
+    TypeError is raised if the string is incorrectly padded.  Characters that
+    are not in the standard alphabet are discarded prior to the padding
+    check.
     """
     return b64decode(s)
 
-def urlsafe_b64encode(s):
-    """Encode a string using a url-safe Base64 alphabet.
+_urlsafe_encode_translation = string.maketrans(b'+/', b'-_')
+_urlsafe_decode_translation = string.maketrans(b'-_', b'+/')
 
-    s is the string to encode.  The encoded string is returned.  The alphabet
-    uses '-' instead of '+' and '_' instead of '/'.
+def urlsafe_b64encode(s):
+    """Encode a string using the URL- and filesystem-safe Base64 alphabet.
+
+    Argument s is the string to encode.  The encoded string is returned.  The
+    alphabet uses '-' instead of '+' and '_' instead of '/'.
     """
-    return b64encode(s, '-_')
+    return b64encode(s).translate(_urlsafe_encode_translation)
 
 def urlsafe_b64decode(s):
-    """Decode a string encoded with the standard Base64 alphabet.
+    """Decode a string using the URL- and filesystem-safe Base64 alphabet.
 
-    s is the string to decode.  The decoded string is returned.  A TypeError
-    is raised if the string is incorrectly padded or if there are non-alphabet
-    characters present in the string.
+    Argument s is the string to decode.  The decoded string is returned.  A
+    TypeError is raised if the string is incorrectly padded.  Characters that
+    are not in the URL-safe base-64 alphabet, and are not a plus '+' or slash
+    '/', are discarded prior to the padding check.
 
     The alphabet uses '-' instead of '+' and '_' instead of '/'.
     """
-    return b64decode(s, '-_')
+    return b64decode(s.translate(_urlsafe_decode_translation))
 
 
 
@@ -126,7 +133,9 @@ _b32alphabet = {
     8: 'I', 17: 'R', 26: '2',
     }
 
-_b32tab = [v for v in _b32alphabet.values()]
+_b32tab = _b32alphabet.items()
+_b32tab.sort()
+_b32tab = [v for k, v in _b32tab]
 _b32rev = dict([(v, long(k)) for k, v in _b32alphabet.items()])
 
 
@@ -198,7 +207,7 @@ def b32decode(s, casefold=False, map01=None):
     # False, or the character to map the digit 1 (one) to.  It should be
     # either L (el) or I (eye).
     if map01:
-        s = _translate(s, {'0': 'O', '1': map01})
+        s = s.translate(string.maketrans(b'01', b'O' + map01))
     if casefold:
         s = s.upper()
     # Strip off pad characters from the right.  We need to count the pad
@@ -221,12 +230,14 @@ def b32decode(s, casefold=False, map01=None):
         acc += _b32rev[c] << shift
         shift -= 5
         if shift < 0:
-            parts.append(binascii.unhexlify(hex(acc)[2:-1]))
+            parts.append(binascii.unhexlify('%010x' % acc))
             acc = 0
             shift = 35
     # Process the last, partial quanta
-    last = binascii.unhexlify(hex(acc)[2:-1])
-    if padchars == 1:
+    last = binascii.unhexlify('%010x' % acc)
+    if padchars == 0:
+        last = ''                       # No characters
+    elif padchars == 1:
         last = last[:-1]
     elif padchars == 3:
         last = last[:-2]
@@ -234,7 +245,7 @@ def b32decode(s, casefold=False, map01=None):
         last = last[:-3]
     elif padchars == 6:
         last = last[:-4]
-    elif padchars <> 0:
+    else:
         raise TypeError('Incorrect padding')
     parts.append(last)
     return EMPTYSTRING.join(parts)
@@ -259,7 +270,7 @@ def b16decode(s, casefold=False):
     a lowercase alphabet is acceptable as input.  For security purposes, the
     default is False.
 
-    The decoded string is returned.  A TypeError is raised if s were
+    The decoded string is returned.  A TypeError is raised if s is
     incorrectly padded or if there are non-alphabet characters present in the
     string.
     """
@@ -304,7 +315,7 @@ def decode(input, output):
 
 
 def encodestring(s):
-    """Encode a string."""
+    """Encode a string into multiple lines of base-64 data."""
     pieces = []
     for i in range(0, len(s), MAXBINSIZE):
         chunk = s[i : i + MAXBINSIZE]
@@ -339,7 +350,8 @@ def test():
         if o == '-u': func = decode
         if o == '-t': test1(); return
     if args and args[0] != '-':
-        func(open(args[0], 'rb'), sys.stdout)
+        with open(args[0], 'rb') as f:
+            func(f, sys.stdout)
     else:
         func(sys.stdin, sys.stdout)
 

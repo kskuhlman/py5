@@ -35,7 +35,6 @@ printable = digits + letters + punctuation + whitespace
 
 # Case conversion helpers
 # Use str to convert Unicode literal in case of -U
-# Note that Cookie.py bogusly uses _idmap :(
 l = map(chr, xrange(256))
 _idmap = str('').join(l)
 del l
@@ -43,17 +42,18 @@ del l
 # Functions which aren't available as string methods.
 
 # Capitalize the words in a string, e.g. " aBc  dEf " -> "Abc Def".
-# See also regsub.capwords().
 def capwords(s, sep=None):
-    """capwords(s, [sep]) -> string
+    """capwords(s [,sep]) -> string
 
     Split the argument into words using split, capitalize each
     word using capitalize, and join the capitalized words using
-    join. Note that this replaces runs of whitespace characters by
-    a single space.
+    join.  If the optional second argument sep is absent or None,
+    runs of whitespace characters are replaced by a single space
+    and leading and trailing whitespace are removed, otherwise
+    sep is used to split and join the words.
 
     """
-    return (sep or ' ').join([x.capitalize() for x in s.split(sep)])
+    return (sep or ' ').join(x.capitalize() for x in s.split(sep))
 
 
 # Construct a translation string
@@ -70,7 +70,7 @@ def maketrans(fromstr, tostr):
         raise ValueError, "maketrans arguments must have same length"
     global _idmapL
     if not _idmapL:
-        _idmapL = map(None, _idmap)
+        _idmapL = list(_idmap)
     L = _idmapL[:]
     fromstr = map(ord, fromstr)
     for i in range(len(fromstr)):
@@ -78,7 +78,7 @@ def maketrans(fromstr, tostr):
     return ''.join(L)
 
 
-
+
 ####################################################################
 import re as _re
 
@@ -145,7 +145,11 @@ class Template:
         raise ValueError('Invalid placeholder in string: line %d, col %d' %
                          (lineno, colno))
 
-    def substitute(self, *args, **kws):
+    def substitute(*args, **kws):
+        if not args:
+            raise TypeError("descriptor 'substitute' of 'Template' object "
+                            "needs an argument")
+        self, args = args[0], args[1:]  # allow the "self" keyword be passed
         if len(args) > 1:
             raise TypeError('Too many positional arguments')
         if not args:
@@ -162,7 +166,7 @@ class Template:
                 val = mapping[named]
                 # We use this idiom instead of str() because the latter will
                 # fail if val is a Unicode containing non-ASCII characters.
-                return '%s' % val
+                return '%s' % (val,)
             if mo.group('escaped') is not None:
                 return self.delimiter
             if mo.group('invalid') is not None:
@@ -171,7 +175,11 @@ class Template:
                              self.pattern)
         return self.pattern.sub(convert, self.template)
 
-    def safe_substitute(self, *args, **kws):
+    def safe_substitute(*args, **kws):
+        if not args:
+            raise TypeError("descriptor 'safe_substitute' of 'Template' object "
+                            "needs an argument")
+        self, args = args[0], args[1:]  # allow the "self" keyword be passed
         if len(args) > 1:
             raise TypeError('Too many positional arguments')
         if not args:
@@ -182,30 +190,24 @@ class Template:
             mapping = args[0]
         # Helper function for .sub()
         def convert(mo):
-            named = mo.group('named')
+            named = mo.group('named') or mo.group('braced')
             if named is not None:
                 try:
                     # We use this idiom instead of str() because the latter
                     # will fail if val is a Unicode containing non-ASCII
-                    return '%s' % mapping[named]
+                    return '%s' % (mapping[named],)
                 except KeyError:
-                    return self.delimiter + named
-            braced = mo.group('braced')
-            if braced is not None:
-                try:
-                    return '%s' % mapping[braced]
-                except KeyError:
-                    return self.delimiter + '{' + braced + '}'
+                    return mo.group()
             if mo.group('escaped') is not None:
                 return self.delimiter
             if mo.group('invalid') is not None:
-                return self.delimiter
+                return mo.group()
             raise ValueError('Unrecognized named group in pattern',
                              self.pattern)
         return self.pattern.sub(convert, self.template)
 
 
-
+
 ####################################################################
 # NOTE: Everything below here is deprecated.  Use string methods instead.
 # This stuff will go away in Python 3.0.
@@ -489,7 +491,7 @@ def translate(s, table, deletions=""):
     deletions argument is not allowed for Unicode strings.
 
     """
-    if deletions:
+    if deletions or table is None:
         return s.translate(table, deletions)
     else:
         # Add s[:0] so that if s is Unicode and table is an 8-bit string,
@@ -508,15 +510,15 @@ def capitalize(s):
     return s.capitalize()
 
 # Substring replacement (global)
-def replace(s, old, new, maxsplit=-1):
-    """replace (str, old, new[, maxsplit]) -> string
+def replace(s, old, new, maxreplace=-1):
+    """replace (str, old, new[, maxreplace]) -> string
 
     Return a copy of string str with all occurrences of substring
-    old replaced by new. If the optional argument maxsplit is
-    given, only the first maxsplit occurrences are replaced.
+    old replaced by new. If the optional argument maxreplace is
+    given, only the first maxreplace occurrences are replaced.
 
     """
-    return s.replace(old, new, maxsplit)
+    return s.replace(old, new, maxreplace)
 
 
 # Try importing optional built-in module "strop" -- if it exists,
@@ -529,3 +531,126 @@ try:
     letters = lowercase + uppercase
 except ImportError:
     pass                                          # Use the original versions
+
+########################################################################
+# the Formatter class
+# see PEP 3101 for details and purpose of this class
+
+# The hard parts are reused from the C implementation.  They're exposed as "_"
+# prefixed methods of str and unicode.
+
+# The overall parser is implemented in str._formatter_parser.
+# The field name parser is implemented in str._formatter_field_name_split
+
+class Formatter(object):
+    def format(*args, **kwargs):
+        if not args:
+            raise TypeError("descriptor 'format' of 'Formatter' object "
+                            "needs an argument")
+        self, args = args[0], args[1:]  # allow the "self" keyword be passed
+        try:
+            format_string, args = args[0], args[1:] # allow the "format_string" keyword be passed
+        except IndexError:
+            if 'format_string' in kwargs:
+                format_string = kwargs.pop('format_string')
+            else:
+                raise TypeError("format() missing 1 required positional "
+                                "argument: 'format_string'")
+        return self.vformat(format_string, args, kwargs)
+
+    def vformat(self, format_string, args, kwargs):
+        used_args = set()
+        result = self._vformat(format_string, args, kwargs, used_args, 2)
+        self.check_unused_args(used_args, args, kwargs)
+        return result
+
+    def _vformat(self, format_string, args, kwargs, used_args, recursion_depth):
+        if recursion_depth < 0:
+            raise ValueError('Max string recursion exceeded')
+        result = []
+        for literal_text, field_name, format_spec, conversion in \
+                self.parse(format_string):
+
+            # output the literal text
+            if literal_text:
+                result.append(literal_text)
+
+            # if there's a field, output it
+            if field_name is not None:
+                # this is some markup, find the object and do
+                #  the formatting
+
+                # given the field_name, find the object it references
+                #  and the argument it came from
+                obj, arg_used = self.get_field(field_name, args, kwargs)
+                used_args.add(arg_used)
+
+                # do any conversion on the resulting object
+                obj = self.convert_field(obj, conversion)
+
+                # expand the format spec, if needed
+                format_spec = self._vformat(format_spec, args, kwargs,
+                                            used_args, recursion_depth-1)
+
+                # format the object and append to the result
+                result.append(self.format_field(obj, format_spec))
+
+        return ''.join(result)
+
+
+    def get_value(self, key, args, kwargs):
+        if isinstance(key, (int, long)):
+            return args[key]
+        else:
+            return kwargs[key]
+
+
+    def check_unused_args(self, used_args, args, kwargs):
+        pass
+
+
+    def format_field(self, value, format_spec):
+        return format(value, format_spec)
+
+
+    def convert_field(self, value, conversion):
+        # do any conversion on the resulting object
+        if conversion is None:
+            return value
+        elif conversion == 's':
+            return str(value)
+        elif conversion == 'r':
+            return repr(value)
+        raise ValueError("Unknown conversion specifier {0!s}".format(conversion))
+
+
+    # returns an iterable that contains tuples of the form:
+    # (literal_text, field_name, format_spec, conversion)
+    # literal_text can be zero length
+    # field_name can be None, in which case there's no
+    #  object to format and output
+    # if field_name is not None, it is looked up, formatted
+    #  with format_spec and conversion and then used
+    def parse(self, format_string):
+        return format_string._formatter_parser()
+
+
+    # given a field_name, find the object it references.
+    #  field_name:   the field being looked up, e.g. "0.name"
+    #                 or "lookup[3]"
+    #  used_args:    a set of which args have been used
+    #  args, kwargs: as passed in to vformat
+    def get_field(self, field_name, args, kwargs):
+        first, rest = field_name._formatter_field_name_split()
+
+        obj = self.get_value(first, args, kwargs)
+
+        # loop through the rest of the field_name, doing
+        #  getattr or getitem as needed
+        for is_attr, i in rest:
+            if is_attr:
+                obj = getattr(obj, i)
+            else:
+                obj = obj[i]
+
+        return obj, first

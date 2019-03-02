@@ -1,309 +1,330 @@
-Building Python using VC++ 7.1
--------------------------------------
-This directory is used to build Python for Win32 platforms, e.g. Windows
-95, 98 and NT.  It requires Microsoft Visual C++ 7.1
-(a.k.a. Visual Studio .NET 2003).
-(For other Windows platforms and compilers, see ../PC/readme.txt.)
+Quick Start Guide
+-----------------
 
-All you need to do is open the workspace "pcbuild.sln" in MSVC++, select
-the Debug or Release setting (using "Solution Configuration" from
-the "Standard" toolbar"), and build the projects.
+1.  Install Microsoft Visual Studio 2008, any edition.
+2.  Install Microsoft Visual Studio 2010, any edition, or Windows SDK 7.1
+    and any version of Microsoft Visual Studio newer than 2010.
+2a. Optionally install Python 3.6 or later.  If not installed,
+    get_externals.bat (build.bat -e) will download and use Python via
+    NuGet.
+3.  Run "build.bat -e" to build Python in 32-bit Release configuration.
+4.  (Optional, but recommended) Run the test suite with "rt.bat -q".
 
-The proper order to build subprojects:
 
-1) pythoncore (this builds the main Python DLL and library files,
-               python21.{dll, lib} in Release mode)
-              NOTE:  in previous releases, this subproject was
-              named after the release number, e.g. python20.
+Building Python using MSVC 9.0 via MSBuild
+------------------------------------------
 
-2) python (this builds the main Python executable,
-           python.exe in Release mode)
+This directory is used to build Python for Win32 and x64 platforms, e.g.
+Windows 2000 and later.  In order to use the project files in this
+directory, you must have installed the MSVC 9.0 compilers, the v90
+PlatformToolset project files for MSBuild, and MSBuild version 4.0 or later.
+The easiest way to make sure you have all of these components is to install
+Visual Studio 2008 and Visual Studio 2010.  Another configuration proven
+to work is Visual Studio 2008, Windows SDK 7.1, and Visual Studio 2013.
 
-3) the other subprojects, as desired or needed (note:  you probably don't
-   want to build most of the other subprojects, unless you're building an
-   entire Python distribution from scratch, or specifically making changes
-   to the subsystems they implement; see SUBPROJECTS below)
+If you only have Visual Studio 2008 available, use the project files in
+../PC/VS9.0 which are fully supported and specifically for VS 2008.
 
-When using the Debug setting, the output files have a _d added to
-their name:  python24_d.dll, python_d.exe, parser_d.pyd, and so on.
+If you do not have Visual Studio 2008 available, you can use these project
+files to build using a different version of MSVC.  For example, use
 
-SUBPROJECTS
------------
-These subprojects should build out of the box.  Subprojects other than the
-main ones (pythoncore, python, pythonw) generally build a DLL (renamed to
-.pyd) from a specific module so that users don't have to load the code
-supporting that module unless they import the module.
+   PCbuild\build.bat "/p:PlatformToolset=v100"
 
+to build using MSVC10 (Visual Studio 2010).
+
+***WARNING***
+Building Python 2.7 for Windows using any toolchain that doesn't link
+against MSVCRT90.dll is *unsupported* as the resulting python.exe will
+not be able to use precompiled extension modules that do link against
+MSVCRT90.dll.
+
+For other Windows platforms and compilers, see ../PC/readme.txt.
+
+To build modules that depend on external libraries, you need to download
+(and, for some of them, build) those first. It's thus recommended to build
+from the command line once as specified below under "Getting External Sources"
+as that does this automatically.
+
+Then, to continue development, you can open the solution "pcbuild.sln" in
+Visual Studio, select the desired combination of configuration and platform,
+then build with "Build Solution".  You can also build from the command
+line using the "build.bat" script in this directory; see below for
+details.  The solution is configured to build the projects in the correct
+order.
+
+To build an installer package, refer to the README in the Tools/msi folder.
+
+The solution currently supports two platforms.  The Win32 platform is
+used to build standard x86-compatible 32-bit binaries, output into this
+directory.  The x64 platform is used for building 64-bit AMD64 (aka
+x86_64 or EM64T) binaries, output into the amd64 sub-directory.  The
+Itanium (IA-64) platform is no longer supported.
+
+Four configuration options are supported by the solution:
+Debug
+    Used to build Python with extra debugging capabilities, equivalent
+    to using ./configure --with-pydebug on UNIX.  All binaries built
+    using this configuration have "_d" added to their name:
+    python27_d.dll, python_d.exe, parser_d.pyd, and so on.  Both the
+    build and rt (run test) batch files in this directory accept a -d
+    option for debug builds.  If you are building Python to help with
+    development of CPython, you will most likely use this configuration.
+PGInstrument, PGUpdate
+    Used to build Python in Release configuration using PGO, which
+    requires Professional Edition of Visual Studio 2008.  See the
+    "Profile Guided Optimization" section below for more information.
+    Build output from each of these configurations lands in its own
+    sub-directory of this directory.  The official Python releases may
+    be built using these configurations.
+Release
+    Used to build Python as it is meant to be used in production
+    settings, though without PGO.
+
+
+Building Python using the build.bat script
+----------------------------------------------
+
+In this directory you can find build.bat, a script designed to make
+building Python on Windows simpler.  This script will use the env.bat
+script to detect one of Visual Studio 2015, 2013, 2012, or 2010, any of
+which contains a usable version of MSBuild.
+
+By default, build.bat will build Python in Release configuration for
+the 32-bit Win32 platform.  It accepts several arguments to change
+this behavior, try `build.bat -h` to learn more.
+
+
+Legacy support
+--------------
+
+You can find build directories for older versions of Visual Studio and
+Visual C++ in the PC directory.  The project files in PC/VS9.0/ are
+specific to Visual Studio 2008, and will be fully supported for the life
+of Python 2.7.
+
+The following legacy build directories are no longer maintained and may
+not work out of the box.
+
+PC/VC6/
+    Visual C++ 6.0
+PC/VS7.1/
+    Visual Studio 2003 (7.1)
+PC/VS8.0/
+    Visual Studio 2005 (8.0)
+
+
+C Runtime
+---------
+
+Visual Studio 2008 uses version 9 of the C runtime (MSVCRT9).  The executables
+are linked to a CRT "side by side" assembly which must be present on the target
+machine.  This is available under the VC/Redist folder of your visual studio
+distribution. On XP and later operating systems that support
+side-by-side assemblies it is not enough to have the msvcrt90.dll present,
+it has to be there as a whole assembly, that is, a folder with the .dll
+and a .manifest.  Also, a check is made for the correct version.
+Therefore, one should distribute this assembly with the dlls, and keep
+it in the same directory.  For compatibility with older systems, one should
+also set the PATH to this directory so that the dll can be found.
+For more info, see the Readme in the VC/Redist folder.
+
+
+Sub-Projects
+------------
+
+The CPython project is split up into several smaller sub-projects which
+are managed by the pcbuild.sln solution file.  Each sub-project is
+represented by a .vcxproj and a .vcxproj.filters file starting with the
+name of the sub-project.  These sub-projects fall into a few general
+categories:
+
+The following sub-projects represent the bare minimum required to build
+a functioning CPython interpreter.  If nothing else builds but these,
+you'll have a very limited but usable python.exe:
 pythoncore
     .dll and .lib
 python
     .exe
+
+These sub-projects provide extra executables that are useful for running
+CPython in different ways:
 pythonw
-    pythonw.exe, a variant of python.exe that doesn't pop up a DOS box
+    pythonw.exe, a variant of python.exe that doesn't open a Command
+    Prompt window
+pylauncher
+    py.exe, the Python Launcher for Windows, see
+        http://docs.python.org/3/using/windows.html#launcher
+pywlauncher
+    pyw.exe, a variant of py.exe that doesn't open a Command Prompt
+    window
+
+The following sub-projects are for individual modules of the standard
+library which are implemented in C; each one builds a DLL (renamed to
+.pyd) of the same name as the project:
+_ctypes
+_ctypes_test
+_elementtree
+_hashlib
+_msi
+_multiprocessing
 _socket
-    socketmodule.c
 _testcapi
-    tests of the Python C API, run via Lib/test/test_capi.py, and
-    implemented by module Modules/_testcapimodule.c
 pyexpat
-    Python wrapper for accelerated XML parsing, which incorporates stable
-    code from the Expat project:  http://sourceforge.net/projects/expat/
 select
-    selectmodule.c
 unicodedata
-    large tables of Unicode data
 winsound
-    play sounds (typically .wav files) under Windows
 
-The following subprojects will generally NOT build out of the box.  They
-wrap code Python doesn't control, and you'll need to download the base
-packages first and unpack them into siblings of PCbuilds's parent
-directory; for example, if your PCbuild is  .......\dist\src\PCbuild\,
-unpack into new subdirectories of dist\.
+There is also a w9xpopen project to build w9xpopen.exe, which is used
+for platform.popen() on platforms whose COMSPEC points to 'command.com'.
 
-_tkinter
-    Python wrapper for the Tk windowing system.  Requires building
-    Tcl/Tk first.  Following are instructions for Tcl/Tk 8.4.7; these
-    should work for version 8.4.6 too, with suitable substitutions:
-
-    Get source
-    ----------
-    Go to
-        http://prdownloads.sourceforge.net/tcl/
-    and download
-        tcl847-src.zip
-        tk847-src.zip
-    Unzip into
-        dist\tcl8.4.7\
-        dist\tk8.4.7\
-    respectively.
-
-    Build Tcl first (done here w/ MSVC 7.1 on Windows XP)
-    ---------------
-    Use "Start -> All Programs -> Microsoft Visual Studio .NET 2003
-         -> Visual Studio .NET Tools -> Visual Studio .NET 2003 Command Prompt"
-    to get a shell window with the correct environment settings
-    cd dist\tcl8.4.7\win
-    nmake -f makefile.vc
-    nmake -f makefile.vc INSTALLDIR=..\..\tcltk install
-
-    XXX Should we compile with OPTS=threads?
-
-    Optional:  run tests, via
-        nmake -f makefile.vc test
-
-        On WinXP Pro, wholly up to date as of 30-Aug-2004:
-        all.tcl:        Total   10678   Passed  9969    Skipped 709     Failed  0
-        Sourced 129 Test Files.
-
-    Build Tk
-    --------
-    cd dist\tk8.4.7\win
-    nmake -f makefile.vc TCLDIR=..\..\tcl8.4.7
-    nmake -f makefile.vc TCLDIR=..\..\tcl8.4.7 INSTALLDIR=..\..\tcltk install
-
-    XXX Should we compile with OPTS=threads?
-
-    XXX Our installer copies a lot of stuff out of the Tcl/Tk install
-    XXX directory.  Is all of that really needed for Python use of Tcl/Tk?
-
-    Optional:  run tests, via
-        nmake -f makefile.vc TCLDIR=..\..\tcl8.4.7 test
-
-        On WinXP Pro, wholly up to date as of 30-Aug-2004:
-        all.tcl:        Total   8420    Passed  6826    Skipped 1581    Failed  13
-        Sourced 91 Test Files.
-        Files with failing tests: canvImg.test scrollbar.test textWind.test winWm.test
-        
-   Built Tix
-   ---------
-   Download from http://prdownloads.sourceforge.net/tix/tix-8.1.4.tar.gz
-   cd dist\tix-8.1.4
-   [cygwin]patch -p1 < ..\..\python\PC\tix.diff
-   cd win
-   nmake -f makefile.vc
-   nmake -f makefile.vc install
-
-zlib
-    Python wrapper for the zlib compression library.  Get the source code
-    for version 1.2.1 from a convenient mirror at:
-        http://www.gzip.org/zlib/
-    Unpack into dist\zlib-1.2.1.
-    A custom pre-link step in the zlib project settings should manage to
-    build zlib-1.2.1\zlib.lib by magic before zlib.pyd (or zlib_d.pyd) is
-    linked in PCbuild\.
-    However, the zlib project is not smart enough to remove anything under
-    zlib-1.2.1\ when you do a clean, so if you want to rebuild zlib.lib
-    you need to clean up zlib-1.2.1\ by hand.
-
-bz2
-    Python wrapper for the libbz2 compression library.  Homepage
-        http://sources.redhat.com/bzip2/
-    Download the source tarball, bzip2-1.0.2.tar.gz.
-    Unpack into dist\bzip2-1.0.2.  WARNING:  If you're using WinZip, you
-    must disable its "TAR file smart CR/LF conversion" feature (under
-    Options -> Configuration -> Miscellaneous -> Other) for the duration.
-
-    A custom pre-link step in the bz2 project settings should manage to
-    build bzip2-1.0.2\libbz2.lib by magic before bz2.pyd (or bz2_d.pyd) is
-    linked in PCbuild\.
-    However, the bz2 project is not smart enough to remove anything under
-    bzip2-1.0.2\ when you do a clean, so if you want to rebuild bzip2.lib
-    you need to clean up bzip2-1.0.2\ by hand.
-
-    The build step shouldn't yield any warnings or errors, and should end
-    by displaying 6 blocks each terminated with
-        FC: no differences encountered
-    If FC finds differences, see the warning abou WinZip above (when I
-    first tried it, sample3.ref failed due to CRLF conversion).
-
-    All of this managed to build bzip2-1.0.2\libbz2.lib, which the Python
-    project links in.
-
-
+The following Python-controlled sub-projects wrap external projects.
+Note that these external libraries are not necessary for a working
+interpreter, but they do implement several major features.  See the
+"Getting External Sources" section below for additional information
+about getting the source for building these libraries.  The sub-projects
+are:
 _bsddb
-    Go to Sleepycat's download page:
-        http://www.sleepycat.com/download/
-
-    and download version 4.2.52.
-
-    With or without strong cryptography? You can choose either with or
-    without strong cryptography, as per the instructions below.  By
-    default, Python is built and distributed WITHOUT strong crypto.
-
-    Unpack into the dist\. directory, ensuring you expand with folder names.
-
-    If you downloaded with strong crypto, this will create a dist\db-4.2.52
-    directory, and is ready to use.
-
-    If you downloaded WITHOUT strong crypto, this will create a
-    dist\db-4.2.52.NC directory - this directory should be renamed to
-    dist\db-4.2.52 before use.
-
-    As of 11-Apr-2004, you also need to download and manually apply two
-    patches before proceeding (and the sleepycat download page tells you
-    about this).  Cygwin patch worked for me.  cd to dist\db-4.2.52 and
-    use "patch -p0 < patchfile" once for each downloaded patchfile.
-
-    Open
-        dist\db-4.2.52\docs\index.html
-
-    and follow the "Windows->Building Berkeley DB with Visual C++ .NET"
-    instructions for building the Sleepycat
-    software.  Note that Berkeley_DB.dsw is in the build_win32 subdirectory.
-    Build the "Release Static" version.
-
-    XXX We're linking against Release_static\libdb42s.lib.
-    XXX This yields the following warnings:
-"""
-Compiling...
-_bsddb.c
-Linking...
-   Creating library ./_bsddb.lib and object ./_bsddb.exp
-_bsddb.obj : warning LNK4217: locally defined symbol _malloc imported in function __db_associateCallback
-_bsddb.obj : warning LNK4217: locally defined symbol _free imported in function __DB_consume
-_bsddb.obj : warning LNK4217: locally defined symbol _fclose imported in function _DB_verify
-_bsddb.obj : warning LNK4217: locally defined symbol _fopen imported in function _DB_verify
-_bsddb.obj : warning LNK4217: locally defined symbol _strncpy imported in function _init_pybsddb
-__bsddb - 0 error(s), 5 warning(s)
-"""
-    XXX This isn't encouraging, but I don't know what to do about it.
-
-    To run extensive tests, pass "-u bsddb" to regrtest.py.  test_bsddb3.py
-    is then enabled.  Running in verbose mode may be helpful.
-
-    XXX The test_bsddb3 tests don't always pass, on Windows (according to
-    XXX me) or on Linux (according to Barry).  (I had much better luck
-    XXX on Win2K than on Win98SE.)  The common failure mode across platforms
-    XXX is
-    XXX     DBAgainError: (11, 'Resource temporarily unavailable -- unable
-    XXX                         to join the environment')
-    XXX
-    XXX and it appears timing-dependent.  On Win2K I also saw this once:
-    XXX
-    XXX test02_SimpleLocks (bsddb.test.test_thread.HashSimpleThreaded) ...
-    XXX Exception in thread reader 1:
-    XXX Traceback (most recent call last):
-    XXX File "C:\Code\python\lib\threading.py", line 411, in __bootstrap
-    XXX    self.run()
-    XXX File "C:\Code\python\lib\threading.py", line 399, in run
-    XXX    apply(self.__target, self.__args, self.__kwargs)
-    XXX File "C:\Code\python\lib\bsddb\test\test_thread.py", line 268, in
-    XXX                  readerThread
-    XXX    rec = c.next()
-    XXX DBLockDeadlockError: (-30996, 'DB_LOCK_DEADLOCK: Locker killed
-    XXX                                to resolve a deadlock')
-    XXX
-    XXX I'm told that DBLockDeadlockError is expected at times.  It
-    XXX doesn't cause a test to fail when it happens (exceptions in
-    XXX threads are invisible to unittest).
-
-    XXX 11-Apr-2004 tim
-    XXX On WinXP Pro, I got one failure from test_bsddb3:
-    XXX
-    XXX ERROR: test04_n_flag (bsddb.test.test_compat.CompatibilityTestCase)
-    XXX Traceback (most recent call last):
-    XXX  File "C:\Code\python\lib\bsddb\test\test_compat.py", line 86, in test04_n_flag
-    XXX    f = hashopen(self.filename, 'n')
-    XXX File "C:\Code\python\lib\bsddb\__init__.py", line 293, in hashopen
-    XXX    d.open(file, db.DB_HASH, flags, mode)
-    XXX DBInvalidArgError: (22, 'Invalid argument -- DB_TRUNCATE illegal with locking specified')
-
+    Python wrapper for Berkeley DB version 4.7.25.
+    Homepage:
+        http://www.oracle.com/us/products/database/berkeley-db/
+_bz2
+    Python wrapper for version 1.0.6 of the libbzip2 compression library
+    Homepage:
+        http://www.bzip.org/
 _ssl
-    Python wrapper for the secure sockets library.
+    Python wrapper for version 1.0.2o of the OpenSSL secure sockets
+    library, which is built by ssl.vcxproj
+    Homepage:
+        http://www.openssl.org/
 
-    Get the latest source code for OpenSSL from
-        http://www.openssl.org
+    Building OpenSSL requires nasm.exe (the Netwide Assembler), version
+    2.10 or newer from
+        http://www.nasm.us/
+    to be somewhere on your PATH.  More recent versions of OpenSSL may
+    need a later version of NASM. If OpenSSL's self tests don't pass,
+    you should first try to update NASM and do a full rebuild of
+    OpenSSL.  If you use the PCbuild\get_externals.bat method
+    for getting sources, it also downloads a version of NASM which the
+    libeay/ssleay sub-projects use.
 
-    You (probably) don't want the "engine" code.  For example, get
-        openssl-0.9.7d.tar.gz
-    not
-        openssl-engine-0.9.7d.tar.gz
+    The libeay/ssleay sub-projects expect your OpenSSL sources to have
+    already been configured and be ready to build.  If you get your sources
+    from svn.python.org as suggested in the "Getting External Sources"
+    section below, the OpenSSL source will already be ready to go.  If
+    you want to build a different version, you will need to run
 
-    Unpack into the "dist" directory, retaining the folder name from
-    the archive - for example, the latest stable OpenSSL will install as
-        dist/openssl-0.9.7d
+       PCbuild\prepare_ssl.py path\to\openssl-source-dir
 
-    You can (theoretically) use any version of OpenSSL you like - the
-    build process will automatically select the latest version.
+    That script will prepare your OpenSSL sources in the same way that
+    those available on svn.python.org have been prepared.  Note that
+    Perl must be installed and available on your PATH to configure
+    OpenSSL.  ActivePerl is recommended and is available from
+        http://www.activestate.com/activeperl/
 
-    You must also install ActivePerl from
-        http://www.activestate.com/Products/ActivePerl/
-    as this is used by the OpenSSL build process.  Complain to them <wink>.
+    The libeay and ssleay sub-projects will build the modules of OpenSSL
+    required by _ssl and _hashlib and may need to be manually updated when
+    upgrading to a newer version of OpenSSL or when adding new
+    functionality to _ssl or _hashlib. They will not clean up their output
+    with the normal Clean target; CleanAll should be used instead.
+_sqlite3
+    Wraps SQLite 3.8.11.0, which is itself built by sqlite3.vcxproj
+    Homepage:
+        http://www.sqlite.org/
+_tkinter
+    Wraps version 8.5.19 of the Tk windowing system.
+    Homepage:
+        http://www.tcl.tk/
 
-    The MSVC project simply invokes PCBuild/build_ssl.py to perform
-    the build.  This Python script locates and builds your OpenSSL
-    installation, then invokes a simple makefile to build the final .pyd.
+    Tkinter's dependencies are built by the tcl.vcxproj and tk.vcxproj
+    projects.  The tix.vcxproj project also builds the Tix extended
+    widget set for use with Tkinter.
 
-    build_ssl.py attempts to catch the most common errors (such as not
-    being able to find OpenSSL sources, or not being able to find a Perl
-    that works with OpenSSL) and give a reasonable error message.
-    If you have a problem that doesn't seem to be handled correctly
-    (eg, you know you have ActivePerl but we can't find it), please take
-    a peek at build_ssl.py and suggest patches.  Note that build_ssl.py
-    should be able to be run directly from the command-line.
+    Those three projects install their respective components in a
+    directory alongside the source directories called "tcltk" on
+    Win32 and "tcltk64" on x64.  They also copy the Tcl and Tk DLLs
+    into the current output directory, which should ensure that Tkinter
+    is able to load Tcl/Tk without having to change your PATH.
 
-    build_ssl.py/MSVC isn't clever enough to clean OpenSSL - you must do
-    this by hand.
+    The tcl, tk, and tix sub-projects do not clean their builds with
+    the normal Clean target; if you need to rebuild, you should use the
+    CleanAll target or manually delete their builds.
 
-Building for Itanium
---------------------
 
-The project files support a ReleaseItanium configuration which creates
-Win64/Itanium binaries. For this to work, you need to install the Platform
-SDK, in particular the 64-bit support. This includes an Itanium compiler
-(future releases of the SDK likely include an AMD64 compiler as well).
-In addition, you need the Visual Studio plugin for external C compilers,
-from http://sf.net/projects/vsextcomp. The plugin will wrap cl.exe, to
-locate the proper target compiler, and convert compiler options
-accordingly.
+Getting External Sources
+------------------------
 
-The Itanium build has seen little testing. The SDK compiler reports a lot
-of warnings about conversion from size_t to int, which will be fixed in
-future Python releases.
+The last category of sub-projects listed above wrap external projects
+Python doesn't control, and as such a little more work is required in
+order to download the relevant source files for each project before they
+can be built.  However, a simple script is provided to make this as
+painless as possible, called "get_externals.bat" and located in this
+directory.  This script extracts all the external sub-projects from
+    https://github.com/python/cpython-source-deps
+and
+    https://github.com/python/cpython-bin-deps
+via a Python script called "get_external.py", located in this directory.
+If Python 3.6 or later is not available via the "py.exe" launcher, the
+path or command to use for Python can be provided in the PYTHON_FOR_BUILD
+environment variable, or get_externals.bat will download the latest
+version of NuGet and use it to download the latest "pythonx86" package
+for use with get_external.py.  Everything downloaded by these scripts is
+stored in ..\externals (relative to this directory).
 
-YOUR OWN EXTENSION DLLs
------------------------
-If you want to create your own extension module DLL, there's an example
-with easy-to-follow instructions in ../PC/example/; read the file
-readme.txt there first.
+It is also possible to download sources from each project's homepage,
+though you may have to change folder names or pass the names to MSBuild
+as the values of certain properties in order for the build solution to
+find them.  This is an advanced topic and not necessarily fully
+supported.
+
+The get_externals.bat script is called automatically by build.bat when
+you pass the '-e' option to it.
+
+
+Profile Guided Optimization
+---------------------------
+
+The solution has two configurations for PGO. The PGInstrument
+configuration must be built first. The PGInstrument binaries are linked
+against a profiling library and contain extra debug information. The
+PGUpdate configuration takes the profiling data and generates optimized
+binaries.
+
+The build_pgo.bat script automates the creation of optimized binaries.
+It creates the PGI files, runs the unit test suite or PyBench with the
+PGI python, and finally creates the optimized files.
+
+See
+    http://msdn.microsoft.com/en-us/library/e7k32f4k(VS.90).aspx
+for more on this topic.
+
+
+Static library
+--------------
+
+The solution has no configuration for static libraries. However it is
+easy to build a static library instead of a DLL. You simply have to set
+the "Configuration Type" to "Static Library (.lib)" and alter the
+preprocessor macro "Py_ENABLE_SHARED" to "Py_NO_ENABLE_SHARED". You may
+also have to change the "Runtime Library" from "Multi-threaded DLL
+(/MD)" to "Multi-threaded (/MT)".
+
+
+Visual Studio properties
+------------------------
+
+The PCbuild solution makes use of Visual Studio property files (*.props)
+to simplify each project. The properties can be viewed in the Property
+Manager (View -> Other Windows -> Property Manager) but should be
+carefully modified by hand.
+
+The property files used are:
+ * python (versions, directories and build names)
+ * pyproject (base settings for all projects)
+ * openssl (used by libeay and ssleay projects)
+ * tcltk (used by _tkinter, tcl, tk and tix projects)
+
+The pyproject property file defines all of the build settings for each
+project, with some projects overriding certain specific values. The GUI
+doesn't always reflect the correct settings and may confuse the user
+with false information, especially for settings that automatically adapt
+for diffirent configurations.

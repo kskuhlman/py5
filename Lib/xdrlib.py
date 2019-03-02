@@ -9,6 +9,7 @@ try:
     from cStringIO import StringIO as _StringIO
 except ImportError:
     from StringIO import StringIO as _StringIO
+from functools import wraps
 
 __all__ = ["Error", "Packer", "Unpacker", "ConversionError"]
 
@@ -34,6 +35,16 @@ class Error(Exception):
 class ConversionError(Error):
     pass
 
+def raise_conversion_error(function):
+    """ Wrap any raised struct.errors in a ConversionError. """
+
+    @wraps(function)
+    def result(self, value):
+        try:
+            return function(self, value)
+        except struct.error as e:
+            raise ConversionError(e.args[0])
+    return result
 
 
 class Packer:
@@ -50,10 +61,14 @@ class Packer:
     # backwards compatibility
     get_buf = get_buffer
 
+    @raise_conversion_error
     def pack_uint(self, x):
         self.__buf.write(struct.pack('>L', x))
 
-    pack_int = pack_uint
+    @raise_conversion_error
+    def pack_int(self, x):
+        self.__buf.write(struct.pack('>l', x))
+
     pack_enum = pack_int
 
     def pack_bool(self, x):
@@ -61,26 +76,30 @@ class Packer:
         else: self.__buf.write('\0\0\0\0')
 
     def pack_uhyper(self, x):
-        self.pack_uint(x>>32 & 0xffffffffL)
-        self.pack_uint(x & 0xffffffffL)
+        try:
+            self.pack_uint(x>>32 & 0xffffffffL)
+        except (TypeError, struct.error) as e:
+            raise ConversionError(e.args[0])
+        try:
+            self.pack_uint(x & 0xffffffffL)
+        except (TypeError, struct.error) as e:
+            raise ConversionError(e.args[0])
 
     pack_hyper = pack_uhyper
 
+    @raise_conversion_error
     def pack_float(self, x):
-        try: self.__buf.write(struct.pack('>f', x))
-        except struct.error, msg:
-            raise ConversionError, msg
+        self.__buf.write(struct.pack('>f', x))
 
+    @raise_conversion_error
     def pack_double(self, x):
-        try: self.__buf.write(struct.pack('>d', x))
-        except struct.error, msg:
-            raise ConversionError, msg
+        self.__buf.write(struct.pack('>d', x))
 
     def pack_fstring(self, n, s):
         if n < 0:
             raise ValueError, 'fstring size must be nonnegative'
-        n = ((n+3)/4)*4
         data = s[:n]
+        n = ((n+3)//4)*4
         data = data + (n - len(data)) * '\0'
         self.__buf.write(data)
 
@@ -157,7 +176,9 @@ class Unpacker:
         return struct.unpack('>l', data)[0]
 
     unpack_enum = unpack_int
-    unpack_bool = unpack_int
+
+    def unpack_bool(self):
+        return bool(self.unpack_int())
 
     def unpack_uhyper(self):
         hi = self.unpack_uint()
@@ -190,7 +211,7 @@ class Unpacker:
         if n < 0:
             raise ValueError, 'fstring size must be nonnegative'
         i = self.__pos
-        j = i + (n+3)/4*4
+        j = i + (n+3)//4*4
         if j > len(self.__buf):
             raise EOFError
         self.__pos = j
@@ -225,61 +246,3 @@ class Unpacker:
     def unpack_array(self, unpack_item):
         n = self.unpack_uint()
         return self.unpack_farray(n, unpack_item)
-
-
-# test suite
-def _test():
-    p = Packer()
-    packtest = [
-        (p.pack_uint,    (9,)),
-        (p.pack_bool,    (None,)),
-        (p.pack_bool,    ('hello',)),
-        (p.pack_uhyper,  (45L,)),
-        (p.pack_float,   (1.9,)),
-        (p.pack_double,  (1.9,)),
-        (p.pack_string,  ('hello world',)),
-        (p.pack_list,    (range(5), p.pack_uint)),
-        (p.pack_array,   (['what', 'is', 'hapnin', 'doctor'], p.pack_string)),
-        ]
-    succeedlist = [1] * len(packtest)
-    count = 0
-    for method, args in packtest:
-        print 'pack test', count,
-        try:
-            method(*args)
-            print 'succeeded'
-        except ConversionError, var:
-            print 'ConversionError:', var.msg
-            succeedlist[count] = 0
-        count = count + 1
-    data = p.get_buffer()
-    # now verify
-    up = Unpacker(data)
-    unpacktest = [
-        (up.unpack_uint,   (), lambda x: x == 9),
-        (up.unpack_bool,   (), lambda x: not x),
-        (up.unpack_bool,   (), lambda x: x),
-        (up.unpack_uhyper, (), lambda x: x == 45L),
-        (up.unpack_float,  (), lambda x: 1.89 < x < 1.91),
-        (up.unpack_double, (), lambda x: 1.89 < x < 1.91),
-        (up.unpack_string, (), lambda x: x == 'hello world'),
-        (up.unpack_list,   (up.unpack_uint,), lambda x: x == range(5)),
-        (up.unpack_array,  (up.unpack_string,),
-         lambda x: x == ['what', 'is', 'hapnin', 'doctor']),
-        ]
-    count = 0
-    for method, args, pred in unpacktest:
-        print 'unpack test', count,
-        try:
-            if succeedlist[count]:
-                x = method(*args)
-                print pred(x) and 'succeeded' or 'failed', ':', x
-            else:
-                print 'skipping'
-        except ConversionError, var:
-            print 'ConversionError:', var.msg
-        count = count + 1
-
-
-if __name__ == '__main__':
-    _test()

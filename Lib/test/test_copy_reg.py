@@ -8,6 +8,28 @@ class C:
     pass
 
 
+class WithoutSlots(object):
+    pass
+
+class WithWeakref(object):
+    __slots__ = ('__weakref__',)
+
+class WithPrivate(object):
+    __slots__ = ('__spam',)
+
+class _WithLeadingUnderscoreAndPrivate(object):
+    __slots__ = ('__spam',)
+
+class ___(object):
+    __slots__ = ('__spam',)
+
+class WithSingleString(object):
+    __slots__ = 'spam'
+
+class WithInherited(WithSingleString):
+    __slots__ = ('eggs',)
+
+
 class CopyRegTestCase(unittest.TestCase):
 
     def test_class(self):
@@ -24,7 +46,7 @@ class CopyRegTestCase(unittest.TestCase):
 
     def test_bool(self):
         import copy
-        self.assertEquals(True, copy.copy(True))
+        self.assertEqual(True, copy.copy(True))
 
     def test_extension_registry(self):
         mod, func, code = 'junk1 ', ' junk2', 0xabcd
@@ -35,10 +57,10 @@ class CopyRegTestCase(unittest.TestCase):
                               mod, func, code)
             copy_reg.add_extension(mod, func, code)
             # Should be in the registry.
-            self.assert_(copy_reg._extension_registry[mod, func] == code)
-            self.assert_(copy_reg._inverted_registry[code] == (mod, func))
+            self.assertTrue(copy_reg._extension_registry[mod, func] == code)
+            self.assertTrue(copy_reg._inverted_registry[code] == (mod, func))
             # Shouldn't be in the cache.
-            self.assert_(code not in copy_reg._extension_cache)
+            self.assertNotIn(code, copy_reg._extension_cache)
             # Redundant registration should be OK.
             copy_reg.add_extension(mod, func, code)  # shouldn't blow up
             # Conflicting code.
@@ -65,7 +87,7 @@ class CopyRegTestCase(unittest.TestCase):
             e.restore()
 
         # Shouldn't be there anymore.
-        self.assert_((mod, func) not in copy_reg._extension_registry)
+        self.assertNotIn((mod, func), copy_reg._extension_registry)
         # The code *may* be in copy_reg._extension_registry, though, if
         # we happened to pick on a registered code.  So don't check for
         # that.
@@ -83,6 +105,23 @@ class CopyRegTestCase(unittest.TestCase):
         for code in -1, 0, 0x80000000L:
             self.assertRaises(ValueError, copy_reg.add_extension,
                               mod, func, code)
+
+    def test_slotnames(self):
+        self.assertEqual(copy_reg._slotnames(WithoutSlots), [])
+        self.assertEqual(copy_reg._slotnames(WithWeakref), [])
+        expected = ['_WithPrivate__spam']
+        self.assertEqual(copy_reg._slotnames(WithPrivate), expected)
+        expected = ['_WithLeadingUnderscoreAndPrivate__spam']
+        self.assertEqual(copy_reg._slotnames(_WithLeadingUnderscoreAndPrivate),
+                         expected)
+        self.assertEqual(copy_reg._slotnames(___), ['__spam'])
+        self.assertEqual(copy_reg._slotnames(WithSingleString), ['spam'])
+        expected = ['eggs', 'spam']
+        expected.sort()
+        result = copy_reg._slotnames(WithInherited)
+        result.sort()
+        self.assertEqual(result, expected)
+
 
 def test_main():
     test_support.run_unittest(CopyRegTestCase)

@@ -4,13 +4,14 @@ Miscellaneous utility functions -- anything that doesn't fit into
 one of the other *util.py modules.
 """
 
-__revision__ = "$Id: util.py,v 1.76 2004/07/18 06:14:42 tim_one Exp $"
+__revision__ = "$Id$"
 
 import sys, os, string, re
 from distutils.errors import DistutilsPlatformError
 from distutils.dep_util import newer
 from distutils.spawn import spawn
 from distutils import log
+from distutils.errors import DistutilsByteCompileError
 
 def get_platform ():
     """Return a string that identifies the current platform.  This is used
@@ -29,8 +30,31 @@ def get_platform ():
        irix-5.3
        irix64-6.2
 
-    For non-POSIX platforms, currently just returns 'sys.platform'.
+    Windows will return one of:
+       win-amd64 (64bit Windows on AMD64 (aka x86_64, Intel64, EM64T, etc)
+       win-ia64 (64bit Windows on Itanium)
+       win32 (all others - specifically, sys.platform is returned)
+
+    For other non-POSIX platforms, currently just returns 'sys.platform'.
     """
+    if os.name == 'nt':
+        # sniff sys.version for architecture.
+        prefix = " bit ("
+        i = string.find(sys.version, prefix)
+        if i == -1:
+            return sys.platform
+        j = string.find(sys.version, ")", i)
+        look = sys.version[i+len(prefix):j].lower()
+        if look=='amd64':
+            return 'win-amd64'
+        if look=='itanium':
+            return 'win-ia64'
+        return sys.platform
+
+    # Set for cross builds explicitly
+    if "_PYTHON_HOST_PLATFORM" in os.environ:
+        return os.environ["_PYTHON_HOST_PLATFORM"]
+
     if os.name != "posix" or not hasattr(os, 'uname'):
         # XXX what about the architecture? NT is Intel or Alpha,
         # Mac OS is M68k or PPC, etc.
@@ -45,6 +69,7 @@ def get_platform ():
     osname = string.lower(osname)
     osname = string.replace(osname, '/', '')
     machine = string.replace(machine, ' ', '_')
+    machine = string.replace(machine, '/', '-')
 
     if osname[:5] == "linux":
         # At least on Linux/Intel, 'machine' is the processor --
@@ -55,6 +80,11 @@ def get_platform ():
         if release[0] >= "5":           # SunOS 5 == Solaris 2
             osname = "solaris"
             release = "%d.%s" % (int(release[0]) - 3, release[2:])
+            # We can't use "platform.architecture()[0]" because a
+            # bootstrap problem. We use a dict to get an error
+            # if some suspicious happens.
+            bitness = {2147483647:"32bit", 9223372036854775807:"64bit"}
+            machine += ".%s" % bitness[sys.maxint]
         # fall through to standard osname-release-machine representation
     elif osname[:4] == "irix":              # could be "irix64"!
         return "%s-%s" % (osname, release)
@@ -66,6 +96,11 @@ def get_platform ():
         m = rel_re.match(release)
         if m:
             release = m.group()
+    elif osname[:6] == "darwin":
+        import _osx_support, distutils.sysconfig
+        osname, release, machine = _osx_support.get_platform_osx(
+                                        distutils.sysconfig.get_config_vars(),
+                                        osname, release, machine)
 
     return "%s-%s-%s" % (osname, release, machine)
 
@@ -95,7 +130,7 @@ def convert_path (pathname):
         paths.remove('.')
     if not paths:
         return os.curdir
-    return apply(os.path.join, paths)
+    return os.path.join(*paths)
 
 # convert_path ()
 
@@ -124,15 +159,6 @@ def change_root (new_root, pathname):
             path = path[1:]
         return os.path.join(new_root, path)
 
-    elif os.name == 'mac':
-        if not os.path.isabs(pathname):
-            return os.path.join(new_root, pathname)
-        else:
-            # Chop off volume name from start of path
-            elements = string.split(pathname, ":", 1)
-            pathname = ":" + elements[1]
-            return os.path.join(new_root, pathname)
-
     else:
         raise DistutilsPlatformError, \
               "nothing known about platform '%s'" % os.name
@@ -151,11 +177,16 @@ def check_environ ():
     if _environ_checked:
         return
 
-    if os.name == 'posix' and not os.environ.has_key('HOME'):
-        import pwd
-        os.environ['HOME'] = pwd.getpwuid(os.getuid())[5]
+    if os.name == 'posix' and 'HOME' not in os.environ:
+        try:
+            import pwd
+            os.environ['HOME'] = pwd.getpwuid(os.getuid())[5]
+        except (ImportError, KeyError):
+            # bpo-10496: if the current user identifier doesn't exist in the
+            # password database, do nothing
+            pass
 
-    if not os.environ.has_key('PLAT'):
+    if 'PLAT' not in os.environ:
         os.environ['PLAT'] = get_platform()
 
     _environ_checked = 1
@@ -173,7 +204,7 @@ def subst_vars (s, local_vars):
     check_environ()
     def _subst (match, local_vars=local_vars):
         var_name = match.group(1)
-        if local_vars.has_key(var_name):
+        if var_name in local_vars:
             return str(local_vars[var_name])
         else:
             return os.environ[var_name]
@@ -187,25 +218,10 @@ def subst_vars (s, local_vars):
 
 
 def grok_environment_error (exc, prefix="error: "):
-    """Generate a useful error message from an EnvironmentError (IOError or
-    OSError) exception object.  Handles Python 1.5.1 and 1.5.2 styles, and
-    does what it can to deal with exception objects that don't have a
-    filename (which happens when the error is due to a two-file operation,
-    such as 'rename()' or 'link()'.  Returns the error message as a string
-    prefixed with 'prefix'.
-    """
-    # check for Python 1.5.2-style {IO,OS}Error exception objects
-    if hasattr(exc, 'filename') and hasattr(exc, 'strerror'):
-        if exc.filename:
-            error = prefix + "%s: %s" % (exc.filename, exc.strerror)
-        else:
-            # two-argument functions in posix module don't
-            # include the filename in the exception object!
-            error = prefix + "%s" % exc.strerror
-    else:
-        error = prefix + str(exc[-1])
-
-    return error
+    # Function kept for backward compatibility.
+    # Used to try clever things with EnvironmentErrors,
+    # but nowadays str(exception) produces good messages.
+    return prefix + str(exc)
 
 
 # Needed by 'split_quoted()'
@@ -295,7 +311,7 @@ def execute (func, args, msg=None, verbose=0, dry_run=0):
 
     log.info(msg)
     if not dry_run:
-        apply(func, args)
+        func(*args)
 
 
 def strtobool (val):
@@ -347,6 +363,9 @@ def byte_compile (py_files,
     generated in indirect mode; unless you know what you're doing, leave
     it set to None.
     """
+    # nothing is done if sys.dont_write_bytecode is True
+    if sys.dont_write_bytecode:
+        raise DistutilsByteCompileError('byte-compiling is disabled.')
 
     # First, if the caller didn't force us into direct or indirect mode,
     # figure out which mode we should be in.  We take a conservative
@@ -459,6 +478,5 @@ def rfc822_escape (header):
     RFC-822 header, by ensuring there are 8 spaces space after each newline.
     """
     lines = string.split(header, '\n')
-    lines = map(string.strip, lines)
     header = string.join(lines, '\n' + 8*' ')
     return header

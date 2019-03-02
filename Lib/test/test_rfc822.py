@@ -1,7 +1,7 @@
-import rfc822
-import sys
 import unittest
 from test import test_support
+
+rfc822 = test_support.import_module("rfc822", deprecated=True)
 
 try:
     from cStringIO import StringIO
@@ -16,23 +16,23 @@ class MessageTestCase(unittest.TestCase):
     def test_get(self):
         msg = self.create_message(
             'To: "last, first" <userid@foo.net>\n\ntest\n')
-        self.assert_(msg.get("to") == '"last, first" <userid@foo.net>')
-        self.assert_(msg.get("TO") == '"last, first" <userid@foo.net>')
-        self.assert_(msg.get("No-Such-Header") is None)
-        self.assert_(msg.get("No-Such-Header", "No-Such-Value")
+        self.assertTrue(msg.get("to") == '"last, first" <userid@foo.net>')
+        self.assertTrue(msg.get("TO") == '"last, first" <userid@foo.net>')
+        self.assertTrue(msg.get("No-Such-Header") is None)
+        self.assertTrue(msg.get("No-Such-Header", "No-Such-Value")
                      == "No-Such-Value")
 
     def test_setdefault(self):
         msg = self.create_message(
             'To: "last, first" <userid@foo.net>\n\ntest\n')
-        self.assert_(not msg.has_key("New-Header"))
-        self.assert_(msg.setdefault("New-Header", "New-Value") == "New-Value")
-        self.assert_(msg.setdefault("New-Header", "Different-Value")
+        self.assertTrue(not msg.has_key("New-Header"))
+        self.assertTrue(msg.setdefault("New-Header", "New-Value") == "New-Value")
+        self.assertTrue(msg.setdefault("New-Header", "Different-Value")
                      == "New-Value")
-        self.assert_(msg["new-header"] == "New-Value")
+        self.assertTrue(msg["new-header"] == "New-Value")
 
-        self.assert_(msg.setdefault("Another-Header") == "")
-        self.assert_(msg["another-header"] == "")
+        self.assertTrue(msg.setdefault("Another-Header") == "")
+        self.assertTrue(msg["another-header"] == "")
 
     def check(self, msg, results):
         """Check addresses and the date."""
@@ -45,6 +45,10 @@ class MessageTestCase(unittest.TestCase):
                 print 'extra parsed address:', repr(n), repr(a)
                 continue
             i = i + 1
+            self.assertEqual(mn, n,
+                             "Un-expected name: %r != %r" % (mn, n))
+            self.assertEqual(ma, a,
+                             "Un-expected address: %r != %r" % (ma, a))
             if mn == n and ma == a:
                 pass
             else:
@@ -128,6 +132,12 @@ class MessageTestCase(unittest.TestCase):
         self.check(
             'To: person@dom.ain (User J. Person)\n\n',
             [('User J. Person', 'person@dom.ain')])
+
+    def test_doublecomment(self):
+        # The RFC allows comments within comments in an email addr
+        self.check(
+            'To: person@dom.ain ((User J. Person)), John Doe <foo@bar.com>\n\n',
+            [('User J. Person', 'person@dom.ain'), ('John Doe', 'foo@bar.com')])
 
     def test_twisted(self):
         # This one is just twisted.  I don't know what the proper
@@ -237,6 +247,12 @@ A test message.
         eq = self.assertEqual
         eq(rfc822.quote('foo\\wacky"name'), 'foo\\\\wacky\\"name')
         eq(rfc822.unquote('"foo\\\\wacky\\"name"'), 'foo\\wacky"name')
+
+    def test_invalid_headers(self):
+        eq = self.assertEqual
+        msg = self.create_message("First: val\n: otherval\nSecond: val2\n")
+        eq(msg.getheader('First'), 'val')
+        eq(msg.getheader('Second'), 'val2')
 
 
 def test_main():

@@ -20,10 +20,8 @@ barrier, in particular frame and traceback objects.
 
 """
 
-import sys
 import types
-import rpc
-import Debugger
+from idlelib import Debugger
 
 debugging = 0
 
@@ -102,7 +100,7 @@ class IdbAdapter:
             tb = tracebacktable[tbid]
         stack, i = self.idb.get_stack(frame, tb)
         ##print >>sys.__stderr__, "get_stack() ->", stack
-        stack = [(wrap_frame(frame), k) for frame, k in stack]
+        stack = [(wrap_frame(frame2), k) for frame2, k in stack]
         ##print >>sys.__stderr__, "get_stack() ->", stack
         return stack, i
 
@@ -231,7 +229,7 @@ class FrameProxy:
         return self._get_dict_proxy(did)
 
     def _get_dict_proxy(self, did):
-        if self._dictcache.has_key(did):
+        if did in self._dictcache:
             return self._dictcache[did]
         dp = DictProxy(self._conn, self._oid, did)
         self._dictcache[did] = dp

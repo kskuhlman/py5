@@ -1,12 +1,22 @@
-# Copyright (C) 2001-2004 Python Software Foundation
+# Copyright (C) 2001-2006 Python Software Foundation
 # Author: Barry Warsaw
 # Contact: email-sig@python.org
 
 """Encodings and related functions."""
 
+__all__ = [
+    'encode_7or8bit',
+    'encode_base64',
+    'encode_noop',
+    'encode_quopri',
+    ]
+
 import base64
+
 from quopri import encodestring as _encodestring
 
+
+
 def _qencode(s):
     enc = _encodestring(s, quotetabs=True)
     # Must encode spaces, which quopri.encodestring() doesn't do
@@ -62,13 +72,7 @@ def encode_7or8bit(msg):
     try:
         orig.encode('ascii')
     except UnicodeError:
-        # iso-2022-* is non-ASCII but still 7-bit
-        charset = msg.get_charset()
-        output_cset = charset and charset.output_charset
-        if output_cset and output_cset.lower().startswith('iso-2202-'):
-            msg['Content-Transfer-Encoding'] = '7bit'
-        else:
-            msg['Content-Transfer-Encoding'] = '8bit'
+        msg['Content-Transfer-Encoding'] = '8bit'
     else:
         msg['Content-Transfer-Encoding'] = '7bit'
 

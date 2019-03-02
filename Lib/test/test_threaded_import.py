@@ -5,8 +5,9 @@
 # complains several times about module random having no attribute
 # randrange, and then Python hangs.
 
-import thread
-from test.test_support import verbose, TestSkipped
+import unittest
+from test.test_support import verbose, TestFailed, import_module
+thread = import_module('thread')
 
 critical_section = thread.allocate_lock()
 done = thread.allocate_lock()
@@ -25,6 +26,22 @@ def task():
     if finished:
         done.release()
 
+def test_import_hangers():
+    import sys
+    if verbose:
+        print "testing import hangers ...",
+
+    import test.threaded_import_hangers
+    try:
+        if test.threaded_import_hangers.errors:
+            raise TestFailed(test.threaded_import_hangers.errors)
+        elif verbose:
+            print "OK."
+    finally:
+        # In case this test is run again, make sure the helper module
+        # gets loaded from scratch again.
+        del sys.modules['test.threaded_import_hangers']
+
 # Tricky:  When regrtest imports this module, the thread running regrtest
 # grabs the import lock and won't let go of it until this module returns.
 # All other threads attempting an import hang for the duration.  Since
@@ -40,7 +57,7 @@ def test_main():        # magic name!  see above
     import imp
     if imp.lock_held():
         # This triggers on, e.g., from test import autotest.
-        raise TestSkipped("can't run when import lock is held")
+        raise unittest.SkipTest("can't run when import lock is held")
 
     done.acquire()
     for N in (20, 50) * 3:
@@ -52,6 +69,8 @@ def test_main():        # magic name!  see above
         if verbose:
             print "OK."
     done.release()
+
+    test_import_hangers()
 
 if __name__ == "__main__":
     test_main()

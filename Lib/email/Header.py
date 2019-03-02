@@ -1,16 +1,23 @@
-# Copyright (C) 2002-2004 Python Software Foundation
+# Copyright (C) 2002-2006 Python Software Foundation
 # Author: Ben Gertzfield, Barry Warsaw
 # Contact: email-sig@python.org
 
 """Header encoding and decoding functionality."""
 
+__all__ = [
+    'Header',
+    'decode_header',
+    'make_header',
+    ]
+
 import re
 import binascii
 
-import email.quopriMIME
-import email.base64MIME
-from email.Errors import HeaderParseError
-from email.Charset import Charset
+import email.quoprimime
+import email.base64mime
+
+from email.errors import HeaderParseError
+from email.charset import Charset
 
 NL = '\n'
 SPACE = ' '
@@ -32,17 +39,22 @@ ecre = re.compile(r'''
   \?                    # literal ?
   (?P<encoded>.*?)      # non-greedy up to the next ?= is the encoded string
   \?=                   # literal ?=
-  ''', re.VERBOSE | re.IGNORECASE)
+  (?=[ \t]|$)           # whitespace or the end of the string
+  ''', re.VERBOSE | re.IGNORECASE | re.MULTILINE)
 
 # Field name regexp, including trailing colon, but not separating whitespace,
 # according to RFC 2822.  Character range is from tilde to exclamation mark.
 # For use with .match()
 fcre = re.compile(r'[\041-\176]+:$')
 
+# Find a header embedded in a putative header value.  Used to check for
+# header injection attack.
+_embeded_header = re.compile(r'\n[^ \t]+:')
+
 
 
 # Helpers
-_max_append = email.quopriMIME._max_append
+_max_append = email.quoprimime._max_append
 
 
 
@@ -54,7 +66,7 @@ def decode_header(header):
     header, otherwise a lower-case string containing the name of the character
     set specified in the encoded string.
 
-    An email.Errors.HeaderParseError may be raised when certain decoding error
+    An email.errors.HeaderParseError may be raised when certain decoding error
     occurs (e.g. a base64 decoding exception).
     """
     # If no encoding, just return the header
@@ -82,10 +94,13 @@ def decode_header(header):
                 encoded = parts[2]
                 dec = None
                 if encoding == 'q':
-                    dec = email.quopriMIME.header_decode(encoded)
+                    dec = email.quoprimime.header_decode(encoded)
                 elif encoding == 'b':
+                    paderr = len(encoded) % 4   # Postel's law: add missing padding
+                    if paderr:
+                        encoded += '==='[:4 - paderr]
                     try:
-                        dec = email.base64MIME.decode(encoded)
+                        dec = email.base64mime.decode(encoded)
                     except binascii.Error:
                         # Turn this into a higher level exception.  BAW: Right
                         # now we throw the lower level exception away but
@@ -241,7 +256,7 @@ class Header:
         elif not isinstance(charset, Charset):
             charset = Charset(charset)
         # If the charset is our faux 8bit charset, leave the string unchanged
-        if charset <> '8bit':
+        if charset != '8bit':
             # We need to test that the string can be converted to unicode and
             # back to a byte string, given the input and output codecs of the
             # charset.
@@ -329,8 +344,8 @@ class Header:
         # different charsets and/or encodings, and the resulting header will
         # accurately reflect each setting.
         #
-        # Each encoding can be email.Utils.QP (quoted-printable, for
-        # ASCII-like character sets like iso-8859-1), email.Utils.BASE64
+        # Each encoding can be email.utils.QP (quoted-printable, for
+        # ASCII-like character sets like iso-8859-1), email.utils.BASE64
         # (Base64, for non-ASCII like character sets like KOI8-R and
         # iso-2022-jp), or None (no encoding).
         #
@@ -392,7 +407,11 @@ class Header:
             newchunks += self._split(s, charset, targetlen, splitchars)
             lastchunk, lastcharset = newchunks[-1]
             lastlen = lastcharset.encoded_header_len(lastchunk)
-        return self._encode_chunks(newchunks, maxlinelen)
+        value = self._encode_chunks(newchunks, maxlinelen)
+        if _embeded_header.search(value):
+            raise HeaderParseError("header value appears to contain "
+                "an embedded header: {!r}".format(value))
+        return value
 
 
 
@@ -447,7 +466,7 @@ def _split_ascii(s, firstlen, restlen, continuation_ws, splitchars):
                 # If this part is longer than maxlen and we aren't already
                 # splitting on whitespace, try to recursively split this line
                 # on whitespace.
-                if partlen > maxlen and ch <> ' ':
+                if partlen > maxlen and ch != ' ':
                     subl = _split_ascii(part, maxlen, restlen,
                                         continuation_ws, ' ')
                     lines.extend(subl[:-1])

@@ -9,7 +9,7 @@
  * This program is to be launched with redirected standard
  * handles. It will launch the command line specified 16-bit
  * console based application in the same console, forwarding
- * it's own redirected standard handles to the 16-bit child.
+ * its own redirected standard handles to the 16-bit child.
 
  * AKA solution to the problem described in KB: Q150956.
  */    
@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
     STARTUPINFO si;
     PROCESS_INFORMATION pi;
     DWORD exit_code=0;
-    int cmdlen = 0;
+    size_t cmdlen = 0;
     int i;
     char *cmdline, *cmdlinefill;
 

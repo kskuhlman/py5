@@ -23,24 +23,22 @@ import string
 import tabnanny
 import tokenize
 import tkMessageBox
-import PyShell
+from idlelib import PyShell
 
-from configHandler import idleConf
+from idlelib.configHandler import idleConf
+from idlelib import macosxSupport
 
 IDENTCHARS = string.ascii_letters + string.digits + "_"
 
 indent_message = """Error: Inconsistent indentation detected!
 
-This means that either:
+1) Your indentation is outright incorrect (easy to fix), OR
 
-1) your indentation is outright incorrect (easy to fix), or
+2) Your indentation mixes tabs and spaces.
 
-2) your indentation mixes tabs and spaces in a way that depends on \
-how many spaces a tab is worth.
-
-To fix case 2, change all tabs to spaces by using Select All followed \
-by Untabify Region (both in the Edit menu)."""
-
+To fix case 2, change all tabs to spaces by using Edit->Select All followed \
+by Format->Untabify Region and specify the number of columns used by each tab.
+"""
 
 class ScriptBinding:
 
@@ -54,27 +52,31 @@ class ScriptBinding:
         # Provide instance variables referenced by Debugger
         # XXX This should be done differently
         self.flist = self.editwin.flist
-        self.root = self.flist.root
+        self.root = self.editwin.root
+
+        if macosxSupport.isCocoaTk():
+            self.editwin.text_frame.bind('<<run-module-event-2>>', self._run_module_event)
 
     def check_module_event(self, event):
         filename = self.getfilename()
         if not filename:
-            return
+            return 'break'
+        if not self.checksyntax(filename):
+            return 'break'
         if not self.tabnanny(filename):
-            return
-        self.checksyntax(filename)
+            return 'break'
 
     def tabnanny(self, filename):
         f = open(filename, 'r')
         try:
             tabnanny.process_tokens(tokenize.generate_tokens(f.readline))
-        except tokenize.TokenError, msg:
-            msgtxt, (lineno, start) = msg
+        except tokenize.TokenError as msg:
+            msgtxt, (lineno, start) = msg.args
             self.editwin.gotoline(lineno)
             self.errorbox("Tabnanny Tokenizing Error",
                           "Token Error: %s" % msgtxt)
             return False
-        except tabnanny.NannyNag, nag:
+        except tabnanny.NannyNag as nag:
             # The error messages from tabnanny are too confusing...
             self.editwin.gotoline(nag.get_lineno())
             self.errorbox("Tab/space error", indent_message)
@@ -85,11 +87,11 @@ class ScriptBinding:
         self.shell = shell = self.flist.open_shell()
         saved_stream = shell.get_warning_stream()
         shell.set_warning_stream(shell.stderr)
-        f = open(filename, 'r')
-        source = f.read()
-        f.close()
+        with open(filename, 'r') as f:
+            source = f.read()
         if '\r' in source:
             source = re.sub(r"\r\n", "\n", source)
+            source = re.sub(r"\r", "\n", source)
         if source and source[-1] != '\n':
             source = source + '\n'
         text = self.editwin.text
@@ -98,7 +100,7 @@ class ScriptBinding:
             try:
                 # If successful, return the compiled code
                 return compile(source, filename, "exec")
-            except (SyntaxError, OverflowError), err:
+            except (SyntaxError, OverflowError, ValueError) as err:
                 try:
                     msg, (errorfilename, lineno, offset, line) = err
                     if not errorfilename:
@@ -137,32 +139,47 @@ class ScriptBinding:
         """
         filename = self.getfilename()
         if not filename:
-            return
+            return 'break'
         code = self.checksyntax(filename)
         if not code:
-            return
-        shell = self.shell
-        interp = shell.interp
+            return 'break'
+        if not self.tabnanny(filename):
+            return 'break'
+        interp = self.shell.interp
         if PyShell.use_subprocess:
-            shell.restart_shell()
+            interp.restart_subprocess(with_cwd=False, filename=code.co_filename)
         dirname = os.path.dirname(filename)
         # XXX Too often this discards arguments the user just set...
         interp.runcommand("""if 1:
-            _filename = %r
+            __file__ = {filename!r}
             import sys as _sys
             from os.path import basename as _basename
             if (not _sys.argv or
-                _basename(_sys.argv[0]) != _basename(_filename)):
-                _sys.argv = [_filename]
+                _basename(_sys.argv[0]) != _basename(__file__)):
+                _sys.argv = [__file__]
             import os as _os
-            _os.chdir(%r)
-            del _filename, _sys, _basename, _os
-            \n""" % (filename, dirname))
+            _os.chdir({dirname!r})
+            del _sys, _basename, _os
+            \n""".format(filename=filename, dirname=dirname))
         interp.prepend_syspath(filename)
         # XXX KBK 03Jul04 When run w/o subprocess, runtime warnings still
         #         go to __stderr__.  With subprocess, they go to the shell.
         #         Need to change streams in PyShell.ModifiedInterpreter.
         interp.runcode(code)
+        return 'break'
+
+    if macosxSupport.isCocoaTk():
+        # Tk-Cocoa in MacOSX is broken until at least
+        # Tk 8.5.9, and without this rather
+        # crude workaround IDLE would hang when a user
+        # tries to run a module using the keyboard shortcut
+        # (the menu item works fine).
+        _run_module_event = run_module_event
+
+        def run_module_event(self, event):
+            self.editwin.text_frame.after(200,
+                lambda: self.editwin.text_frame.event_generate('<<run-module-event-2>>'))
+            return 'break'
 
     def getfilename(self):
         """Get source filename.  If not saved, offer to save (or create) file
@@ -182,9 +199,9 @@ class ScriptBinding:
             if autosave and filename:
                 self.editwin.io.save(None)
             else:
-                reply = self.ask_save_dialog()
+                confirm = self.ask_save_dialog()
                 self.editwin.text.focus_set()
-                if reply == "ok":
+                if confirm:
                     self.editwin.io.save(None)
                     filename = self.editwin.io.filename
                 else:
@@ -193,15 +210,13 @@ class ScriptBinding:
 
     def ask_save_dialog(self):
         msg = "Source Must Be Saved\n" + 5*' ' + "OK to Save?"
-        mb = tkMessageBox.Message(title="Save Before Run or Check",
-                                  message=msg,
-                                  icon=tkMessageBox.QUESTION,
-                                  type=tkMessageBox.OKCANCEL,
-                                  default=tkMessageBox.OK,
-                                  master=self.editwin.text)
-        return mb.show()
+        confirm = tkMessageBox.askokcancel(title="Save Before Run or Check",
+                                           message=msg,
+                                           default=tkMessageBox.OK,
+                                           parent=self.editwin.text)
+        return confirm
 
     def errorbox(self, title, message):
         # XXX This should really be a function of EditorWindow...
-        tkMessageBox.showerror(title, message, master=self.editwin.text)
+        tkMessageBox.showerror(title, message, parent=self.editwin.text)
         self.editwin.text.focus_set()

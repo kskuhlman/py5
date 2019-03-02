@@ -24,7 +24,7 @@ Misc variables:
 
 """
 
-__version__ = "$Revision: 1.158 $"       # Code version
+__version__ = "$Revision: 72223 $"       # Code version
 
 from types import *
 from copy_reg import dispatch_table
@@ -33,7 +33,6 @@ import marshal
 import sys
 import struct
 import re
-import warnings
 
 __all__ = ["PickleError", "PicklingError", "UnpicklingError", "Pickler",
            "Unpickler", "dump", "dumps", "load", "loads"]
@@ -99,51 +98,51 @@ except NameError:
 # Pickle opcodes.  See pickletools.py for extensive docs.  The listing
 # here is in kind-of alphabetical order of 1-character pickle code.
 # pickletools groups them by purpose.
-#__ILEC400__
-MARK       = '\x28'
-STOP       = '\x2e'
-POP        = '\x30'
-POP_MARK   = '\x31'
-DUP        = '\x32'
-FLOAT      = '\x46'
-BINFLOAT   = '\x47'
-INT        = '\x49'
-BININT     = '\x4a'
-BININT1    = '\x4b'
-LONG       = '\x4c'
-BININT2    = '\x4d'
-NONE       = '\x4e'
-PERSID     = '\x50'
-BINPERSID  = '\x51'
-REDUCE     = '\x52'
-STRING     = '\x53'
-BINSTRING  = '\x54'
-SHORT_BINSTRING ='\x55'
-UNICODE    = '\x56'
-BINUNICODE = '\x58'
-APPEND     = '\x61'
-BUILD      = '\x62'
-GLOBAL     = '\x63'
-DICT       = '\x64'
-EMPTY_DICT = '\x7d'
-APPENDS    = '\x65'
-GET        = '\x67'
-BINGET     = '\x68'
-INST       = '\x69'
-LONG_BINGET= '\x6a'
-LIST       = '\x6c'
-EMPTY_LIST = '\x5d'
-OBJ        = '\x6f'
-PUT        = '\x70'
-BINPUT     = '\x71'
-LONG_BINPUT= '\x72'
-SETITEM    = '\x73'
-TUPLE      = '\x74'
-EMPTY_TUPLE= '\x29'
-SETITEMS   = '\x75'
 
-TRUE      = '\x4901\n'  # not an opcode; see INT docs in pickletools.py
-FALSE     = '\x4900\n'  # not an opcode; see INT docs in pickletools.py
+MARK            = '('   # push special markobject on stack
+STOP            = '.'   # every pickle ends with STOP
+POP             = '0'   # discard topmost stack item
+POP_MARK        = '1'   # discard stack top through topmost markobject
+DUP             = '2'   # duplicate top stack item
+FLOAT           = 'F'   # push float object; decimal string argument
+INT             = 'I'   # push integer or bool; decimal string argument
+BININT          = 'J'   # push four-byte signed int
+BININT1         = 'K'   # push 1-byte unsigned int
+LONG            = 'L'   # push long; decimal string argument
+BININT2         = 'M'   # push 2-byte unsigned int
+NONE            = 'N'   # push None
+PERSID          = 'P'   # push persistent object; id is taken from string arg
+BINPERSID       = 'Q'   #  "       "         "  ;  "  "   "     "  stack
+REDUCE          = 'R'   # apply callable to argtuple, both on stack
+STRING          = 'S'   # push string; NL-terminated string argument
+BINSTRING       = 'T'   # push string; counted binary string argument
+SHORT_BINSTRING = 'U'   #  "     "   ;    "      "       "      " < 256 bytes
+UNICODE         = 'V'   # push Unicode string; raw-unicode-escaped'd argument
+BINUNICODE      = 'X'   #   "     "       "  ; counted UTF-8 string argument
+APPEND          = 'a'   # append stack top to list below it
+BUILD           = 'b'   # call __setstate__ or __dict__.update()
+GLOBAL          = 'c'   # push self.find_class(modname, name); 2 string args
+DICT            = 'd'   # build a dict from stack items
+EMPTY_DICT      = '}'   # push empty dict
+APPENDS         = 'e'   # extend list on stack by topmost stack slice
+GET             = 'g'   # push item from memo on stack; index is string arg
+BINGET          = 'h'   #   "    "    "    "   "   "  ;   "    " 1-byte arg
+INST            = 'i'   # build & push class instance
+LONG_BINGET     = 'j'   # push item from memo on stack; index is 4-byte arg
+LIST            = 'l'   # build list from topmost stack items
+EMPTY_LIST      = ']'   # push empty list
+OBJ             = 'o'   # build & push class instance
+PUT             = 'p'   # store stack top in memo; index is string arg
+BINPUT          = 'q'   #   "     "    "   "   " ;   "    " 1-byte arg
+LONG_BINPUT     = 'r'   #   "     "    "   "   " ;   "    " 4-byte arg
+SETITEM         = 's'   # add key+value pair to dict
+TUPLE           = 't'   # build tuple from topmost stack items
+EMPTY_TUPLE     = ')'   # push empty tuple
+SETITEMS        = 'u'   # modify dict by adding topmost key+value pairs
+BINFLOAT        = 'G'   # push float; arg is 8-byte float encoding
+
+TRUE            = 'I01\n'  # not an opcode; see INT docs in pickletools.py
+FALSE           = 'I00\n'  # not an opcode; see INT docs in pickletools.py
 
 # Protocol 2
 
@@ -171,7 +170,7 @@ del x
 
 class Pickler:
 
-    def __init__(self, file, protocol=None, bin=None):
+    def __init__(self, file, protocol=None):
         """This takes a file-like object for writing a pickle data stream.
 
         The optional protocol argument tells the pickler to use the
@@ -195,12 +194,6 @@ class Pickler:
         object, or any other custom object that meets this interface.
 
         """
-        if protocol is not None and bin is not None:
-            raise ValueError, "can't specify both 'protocol' and 'bin'"
-        if bin is not None:
-            warnings.warn("The 'bin' argument to Pickler() is deprecated",
-                          DeprecationWarning)
-            protocol = bin
         if protocol is None:
             protocol = 0
         if protocol < 0:
@@ -276,7 +269,7 @@ class Pickler:
     def save(self, obj):
         # Check for persistent id (defined by a subclass)
         pid = self.persistent_id(obj)
-        if pid:
+        if pid is not None:
             self.save_pers(pid)
             return
 
@@ -293,20 +286,20 @@ class Pickler:
             f(self, obj) # Call unbound method with explicit self
             return
 
-        # Check for a class with a custom metaclass; treat as regular class
-        try:
-            issc = issubclass(t, TypeType)
-        except TypeError: # t is not a class (old Boost; see SF #502085)
-            issc = 0
-        if issc:
-            self.save_global(obj)
-            return
-
         # Check copy_reg.dispatch_table
         reduce = dispatch_table.get(t)
         if reduce:
             rv = reduce(obj)
         else:
+            # Check for a class with a custom metaclass; treat as regular class
+            try:
+                issc = issubclass(t, TypeType)
+            except TypeError: # t is not a class (old Boost; see SF #502085)
+                issc = 0
+            if issc:
+                self.save_global(obj)
+                return
+
             # Check for a __reduce_ex__ method, fall back to __reduce__
             reduce = getattr(obj, "__reduce_ex__", None)
             if reduce:
@@ -355,17 +348,10 @@ class Pickler:
 
         # Assert that args is a tuple or None
         if not isinstance(args, TupleType):
-            if args is None:
-                # A hack for Jim Fulton's ExtensionClass, now deprecated.
-                # See load_reduce()
-                warnings.warn("__basicnew__ special case is deprecated",
-                              DeprecationWarning)
-            else:
-                raise PicklingError(
-                    "args from reduce() should be a tuple")
+            raise PicklingError("args from reduce() should be a tuple")
 
         # Assert that func is callable
-        if not callable(func):
+        if not hasattr(func, '__call__'):
             raise PicklingError("func from reduce should be callable")
 
         save = self.save
@@ -416,7 +402,13 @@ class Pickler:
             write(REDUCE)
 
         if obj is not None:
-            self.memoize(obj)
+            # If the object is already in the memo, this means it is
+            # recursive. In this case, throw away everything we put on the
+            # stack, and fetch the object back from the memo.
+            if id(obj) in self.memo:
+                write(POP + self.get(self.memo[id(obj)][0]))
+            else:
+                self.memoize(obj)
 
         # More new special cases (that work with older protocols as
         # well): when __reduce__ returns a tuple with 4 or 5 items,
@@ -515,7 +507,7 @@ class Pickler:
         self.memoize(obj)
     dispatch[UnicodeType] = save_unicode
 
-    if StringType == UnicodeType:
+    if StringType is UnicodeType:
         # This is true for Jython
         def save_string(self, obj, pack=struct.pack):
             unicode = obj.isunicode()
@@ -976,7 +968,7 @@ class Unpickler:
         rep = self.readline()[:-1]
         for q in "\"'": # double or single quote
             if rep.startswith(q):
-                if not rep.endswith(q):
+                if len(rep) < 2 or not rep.endswith(q):
                     raise ValueError, "insecure string pickle"
                 rep = rep[len(q):-len(q)]
                 break
@@ -1144,13 +1136,7 @@ class Unpickler:
         stack = self.stack
         args = stack.pop()
         func = stack[-1]
-        if args is None:
-            # A hack for Jim Fulton's ExtensionClass, now deprecated
-            warnings.warn("__basicnew__ special case is deprecated",
-                          DeprecationWarning)
-            value = func.__basicnew__()
-        else:
-            value = func(*args)
+        value = func(*args)
         stack[-1] = value
     dispatch[REDUCE] = load_reduce
 
@@ -1241,7 +1227,15 @@ class Unpickler:
             state, slotstate = state
         if state:
             try:
-                inst.__dict__.update(state)
+                d = inst.__dict__
+                try:
+                    for k, v in state.iteritems():
+                        d[intern(k)] = v
+                # keys in state don't have to be strings
+                # don't blow up, but don't go out of our way
+                except TypeError:
+                    d.update(state)
+
             except RuntimeError:
                 # XXX In restricted execution, the instance's __dict__
                 # is not accessible.  Use the old way of unpickling
@@ -1378,12 +1372,12 @@ try:
 except ImportError:
     from StringIO import StringIO
 
-def dump(obj, file, protocol=None, bin=None):
-    Pickler(file, protocol, bin).dump(obj)
+def dump(obj, file, protocol=None):
+    Pickler(file, protocol).dump(obj)
 
-def dumps(obj, protocol=None, bin=None):
+def dumps(obj, protocol=None):
     file = StringIO()
-    Pickler(file, protocol, bin).dump(obj)
+    Pickler(file, protocol).dump(obj)
     return file.getvalue()
 
 def load(file):

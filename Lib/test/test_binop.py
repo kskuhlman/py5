@@ -56,7 +56,7 @@ class Rat(object):
     den = property(_get_den, None)
 
     def __repr__(self):
-        """Convert a Rat to an string resembling a Rat constructor call."""
+        """Convert a Rat to a string resembling a Rat constructor call."""
         return "Rat(%d, %d)" % (self.__num, self.__den)
 
     def __str__(self):
@@ -78,7 +78,7 @@ class Rat(object):
         raise ValueError, "can't convert %s to int" % repr(self)
 
     def __long__(self):
-        """Convert a Rat to an long; self.den must be 1."""
+        """Convert a Rat to a long; self.den must be 1."""
         if self.__den == 1:
             return long(self.__num)
         raise ValueError, "can't convert %s to long" % repr(self)
@@ -178,7 +178,7 @@ class Rat(object):
         return (x, self - other * x)
 
     def __rdivmod__(self, other):
-        "Divide two Rats, returning quotient and remainder (reversed args)."""
+        """Divide two Rats, returning quotient and remainder (reversed args)."""
         if isint(other):
             other = Rat(other)
         elif not isRat(other):
@@ -207,6 +207,9 @@ class Rat(object):
         """Compare two Rats for inequality."""
         return not self == other
 
+    # Silence Py3k warning
+    __hash__ = None
+
 class RatTestCase(unittest.TestCase):
     """Unit tests for Rat class and its support utilities."""
 
@@ -220,10 +223,10 @@ class RatTestCase(unittest.TestCase):
         self.assertEqual(gcd(-10, -2), -2)
         for i in range(1, 20):
             for j in range(1, 20):
-                self.assert_(gcd(i, j) > 0)
-                self.assert_(gcd(-i, j) < 0)
-                self.assert_(gcd(i, -j) > 0)
-                self.assert_(gcd(-i, -j) < 0)
+                self.assertTrue(gcd(i, j) > 0)
+                self.assertTrue(gcd(-i, j) < 0)
+                self.assertTrue(gcd(i, -j) > 0)
+                self.assertTrue(gcd(-i, -j) < 0)
 
     def test_constructor(self):
         a = Rat(10, 15)

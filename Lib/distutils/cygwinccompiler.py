@@ -10,9 +10,9 @@ cygwin in no-cygwin mode).
 #
 # * if you use a msvc compiled python version (1.5.2)
 #   1. you have to insert a __GNUC__ section in its config.h
-#   2. you have to generate a import library for its dll
+#   2. you have to generate an import library for its dll
 #      - create a def-file for python??.dll
-#      - create a import library using
+#      - create an import library using
 #             dlltool --dllname python15.dll --def python15.def \
 #                       --output-lib libpython15.a
 #
@@ -47,7 +47,7 @@ cygwin in no-cygwin mode).
 
 # This module should be kept compatible with Python 2.1.
 
-__revision__ = "$Id: cygwinccompiler.py,v 1.29 2004/11/10 22:23:14 loewis Exp $"
+__revision__ = "$Id$"
 
 import os,sys,copy
 from distutils.ccompiler import gen_preprocess_options, gen_lib_options
@@ -55,6 +55,29 @@ from distutils.unixccompiler import UnixCCompiler
 from distutils.file_util import write_file
 from distutils.errors import DistutilsExecError, CompileError, UnknownFileError
 from distutils import log
+
+def get_msvcr():
+    """Include the appropriate MSVC runtime library if Python was built
+    with MSVC 7.0 or later.
+    """
+    msc_pos = sys.version.find('MSC v.')
+    if msc_pos != -1:
+        msc_ver = sys.version[msc_pos+6:msc_pos+10]
+        if msc_ver == '1300':
+            # MSVC 7.0
+            return ['msvcr70']
+        elif msc_ver == '1310':
+            # MSVC 7.1
+            return ['msvcr71']
+        elif msc_ver == '1400':
+            # VS2005 / MSVC 8.0
+            return ['msvcr80']
+        elif msc_ver == '1500':
+            # VS2008 / MSVC 9.0
+            return ['msvcr90']
+        else:
+            raise ValueError("Unknown MS Compiler version %s " % msc_ver)
+
 
 class CygwinCCompiler (UnixCCompiler):
 
@@ -121,18 +144,9 @@ class CygwinCCompiler (UnixCCompiler):
             self.warn(
                 "Consider upgrading to a newer version of gcc")
         else:
-            self.dll_libraries=[]
             # Include the appropriate MSVC runtime library if Python was built
-            # with MSVC 7.0 or 7.1.
-            msc_pos = sys.version.find('MSC v.')
-            if msc_pos != -1:
-                msc_ver = sys.version[msc_pos+6:msc_pos+10]
-                if msc_ver == '1300':
-                    # MSVC 7.0
-                    self.dll_libraries = ['msvcr70']
-                elif msc_ver == '1310':
-                    # MSVC 7.1
-                    self.dll_libraries = ['msvcr71']
+            # with MSVC 7.0 or later.
+            self.dll_libraries = get_msvcr()
 
     # __init__ ()
 
@@ -305,13 +319,18 @@ class Mingw32CCompiler (CygwinCCompiler):
         else:
             entry_point = ''
 
-        self.set_executables(compiler='gcc -mno-cygwin -O -Wall',
-                             compiler_so='gcc -mno-cygwin -mdll -O -Wall',
-                             compiler_cxx='g++ -mno-cygwin -O -Wall',
-                             linker_exe='gcc -mno-cygwin',
-                             linker_so='%s -mno-cygwin %s %s'
-                                        % (self.linker_dll, shared_option,
-                                           entry_point))
+        if self.gcc_version < '4' or is_cygwingcc():
+            no_cygwin = ' -mno-cygwin'
+        else:
+            no_cygwin = ''
+
+        self.set_executables(compiler='gcc%s -O -Wall' % no_cygwin,
+                             compiler_so='gcc%s -mdll -O -Wall' % no_cygwin,
+                             compiler_cxx='g++%s -O -Wall' % no_cygwin,
+                             linker_exe='gcc%s' % no_cygwin,
+                             linker_so='%s%s %s %s'
+                                    % (self.linker_dll, no_cygwin,
+                                       shared_option, entry_point))
         # Maybe we should also append -mthreads, but then the finished
         # dlls need another dll (mingwm10.dll see Mingw32 docs)
         # (-mthreads: Support thread-safe exception handling on `Mingw32')
@@ -320,23 +339,15 @@ class Mingw32CCompiler (CygwinCCompiler):
         self.dll_libraries=[]
 
         # Include the appropriate MSVC runtime library if Python was built
-        # with MSVC 7.0 or 7.1.
-        msc_pos = sys.version.find('MSC v.')
-        if msc_pos != -1:
-            msc_ver = sys.version[msc_pos+6:msc_pos+10]
-            if msc_ver == '1300':
-                # MSVC 7.0
-                self.dll_libraries = ['msvcr70']
-            elif msc_ver == '1310':
-                # MSVC 7.1
-                self.dll_libraries = ['msvcr71']
+        # with MSVC 7.0 or later.
+        self.dll_libraries = get_msvcr()
 
     # __init__ ()
 
 # class Mingw32CCompiler
 
 # Because these compilers aren't configured in Python's pyconfig.h file by
-# default, we should at least warn the user if he is using a unmodified
+# default, we should at least warn the user if he is using an unmodified
 # version.
 
 CONFIG_H_OK = "ok"
@@ -376,8 +387,10 @@ def check_config_h():
         # It would probably better to read single lines to search.
         # But we do this only once, and it is fast enough
         f = open(fn)
-        s = f.read()
-        f.close()
+        try:
+            s = f.read()
+        finally:
+            f.close()
 
     except IOError, exc:
         # if we can't read this file, we cannot say it is wrong
@@ -398,7 +411,7 @@ def get_versions():
     """ Try to find out the versions of gcc, ld and dllwrap.
         If not possible it returns None for it.
     """
-    from distutils.version import StrictVersion
+    from distutils.version import LooseVersion
     from distutils.spawn import find_executable
     import re
 
@@ -409,7 +422,7 @@ def get_versions():
         out.close()
         result = re.search('(\d+\.\d+(\.\d+)*)',out_string)
         if result:
-            gcc_version = StrictVersion(result.group(1))
+            gcc_version = LooseVersion(result.group(1))
         else:
             gcc_version = None
     else:
@@ -421,7 +434,7 @@ def get_versions():
         out.close()
         result = re.search('(\d+\.\d+(\.\d+)*)',out_string)
         if result:
-            ld_version = StrictVersion(result.group(1))
+            ld_version = LooseVersion(result.group(1))
         else:
             ld_version = None
     else:
@@ -433,9 +446,18 @@ def get_versions():
         out.close()
         result = re.search(' (\d+\.\d+(\.\d+)*)',out_string)
         if result:
-            dllwrap_version = StrictVersion(result.group(1))
+            dllwrap_version = LooseVersion(result.group(1))
         else:
             dllwrap_version = None
     else:
         dllwrap_version = None
     return (gcc_version, ld_version, dllwrap_version)
+
+def is_cygwingcc():
+    '''Try to determine if the gcc that would be used is from cygwin.'''
+    out = os.popen('gcc -dumpmachine', 'r')
+    out_string = out.read()
+    out.close()
+    # out_string is the target triplet cpu-vendor-os
+    # Cygwin's gcc sets the os to 'cygwin'
+    return out_string.strip().endswith('cygwin')

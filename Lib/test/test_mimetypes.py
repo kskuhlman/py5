@@ -1,13 +1,16 @@
+# -*- coding: utf-8 -*-
+
 import mimetypes
 import StringIO
 import unittest
-from sets import Set
+import sys
 
 from test import test_support
 
 # Tell it we don't know about external files:
 mimetypes.knownfiles = []
 mimetypes.inited = False
+mimetypes._default_mime_types()
 
 
 class MimeTypesTestCase(unittest.TestCase):
@@ -20,6 +23,8 @@ class MimeTypesTestCase(unittest.TestCase):
         eq(self.db.guess_type("foo.tgz"), ("application/x-tar", "gzip"))
         eq(self.db.guess_type("foo.tar.gz"), ("application/x-tar", "gzip"))
         eq(self.db.guess_type("foo.tar.Z"), ("application/x-tar", "compress"))
+        eq(self.db.guess_type("foo.tar.bz2"), ("application/x-tar", "bzip2"))
+        eq(self.db.guess_type("foo.tar.xz"), ("application/x-tar", "xz"))
 
     def test_data_urls(self):
         eq = self.assertEqual
@@ -47,12 +52,12 @@ class MimeTypesTestCase(unittest.TestCase):
 
     def test_guess_all_types(self):
         eq = self.assertEqual
-        unless = self.failUnless
+        unless = self.assertTrue
         # First try strict.  Use a set here for testing the results because if
         # test_urllib2 is run before test_mimetypes, global state is modified
         # such that the 'all' set will have more items in it.
-        all = Set(self.db.guess_all_extensions('text/plain', strict=True))
-        unless(all >= Set(['.bat', '.c', '.h', '.ksh', '.pl', '.txt']))
+        all = set(self.db.guess_all_extensions('text/plain', strict=True))
+        unless(all >= set(['.bat', '.c', '.h', '.ksh', '.pl', '.txt']))
         # And now non-strict
         all = self.db.guess_all_extensions('image/jpg', strict=False)
         all.sort()
@@ -62,8 +67,104 @@ class MimeTypesTestCase(unittest.TestCase):
         eq(all, [])
 
 
+@unittest.skipUnless(sys.platform.startswith("win"), "Windows only")
+class Win32MimeTypesTestCase(unittest.TestCase):
+    def setUp(self):
+        # ensure all entries actually come from the Windows registry
+        self.original_types_map = mimetypes.types_map.copy()
+        mimetypes.types_map.clear()
+
+    def tearDown(self):
+        # restore default settings
+        mimetypes.types_map.clear()
+        mimetypes.types_map.update(self.original_types_map)
+
+    def test_registry_parsing(self):
+        # the original, minimum contents of the MIME database in the
+        # Windows registry is undocumented AFAIK.
+        # Use file types that should *always* exist:
+        eq = self.assertEqual
+        mimetypes.init()
+        db = mimetypes.MimeTypes()
+        eq(db.guess_type("foo.txt"), ("text/plain", None))
+        eq(db.guess_type("image.jpg"), ("image/jpeg", None))
+        eq(db.guess_type("image.png"), ("image/png", None))
+
+    def test_non_latin_extension(self):
+        import _winreg
+
+        class MockWinreg(object):
+            def __getattr__(self, name):
+                if name == 'EnumKey':
+                    return lambda key, i: _winreg.EnumKey(key, i) + "\xa3"
+                elif name == 'OpenKey':
+                    return lambda key, name: _winreg.OpenKey(key, name.rstrip("\xa3"))
+                elif name == 'QueryValueEx':
+                    return lambda subkey, label: (u'текст/простой' , _winreg.REG_SZ)
+                return getattr(_winreg, name)
+
+        mimetypes._winreg = MockWinreg()
+        try:
+            # this used to throw an exception if registry contained non-Latin
+            # characters in extensions (issue #9291)
+            mimetypes.init()
+        finally:
+            mimetypes._winreg = _winreg
+
+    def test_non_latin_type(self):
+        import _winreg
+
+        class MockWinreg(object):
+            def __getattr__(self, name):
+                if name == 'QueryValueEx':
+                    return lambda subkey, label: (u'текст/простой', _winreg.REG_SZ)
+                return getattr(_winreg, name)
+
+        mimetypes._winreg = MockWinreg()
+        try:
+            # this used to throw an exception if registry contained non-Latin
+            # characters in content types (issue #9291)
+            mimetypes.init()
+        finally:
+            mimetypes._winreg = _winreg
+
+    def test_type_map_values(self):
+        import _winreg
+
+        class MockWinreg(object):
+            def __getattr__(self, name):
+                if name == 'QueryValueEx':
+                    return lambda subkey, label: (u'text/plain', _winreg.REG_SZ)
+                return getattr(_winreg, name)
+
+        mimetypes._winreg = MockWinreg()
+        try:
+            mimetypes.init()
+            self.assertTrue(isinstance(mimetypes.types_map.values()[0], str))
+        finally:
+            mimetypes._winreg = _winreg
+
+    def test_registry_read_error(self):
+        import _winreg
+
+        class MockWinreg(object):
+            def OpenKey(self, key, name):
+                if key != _winreg.HKEY_CLASSES_ROOT:
+                    raise WindowsError(5, "Access is denied")
+                return _winreg.OpenKey(key, name)
+            def __getattr__(self, name):
+                return getattr(_winreg, name)
+
+        mimetypes._winreg = MockWinreg()
+        try:
+            mimetypes.init()
+        finally:
+            mimetypes._winreg = _winreg
+
 def test_main():
-    test_support.run_unittest(MimeTypesTestCase)
+    test_support.run_unittest(MimeTypesTestCase,
+        Win32MimeTypesTestCase
+    )
 
 
 if __name__ == "__main__":

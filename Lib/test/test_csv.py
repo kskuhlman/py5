@@ -2,6 +2,7 @@
 # Copyright (C) 2001,2002 Python Software Foundation
 # csv package unit tests
 
+import copy
 import sys
 import os
 import unittest
@@ -9,6 +10,8 @@ from StringIO import StringIO
 import tempfile
 import csv
 import gc
+import io
+import pickle
 from test import test_support
 
 class Test_Csv(unittest.TestCase):
@@ -17,44 +20,104 @@ class Test_Csv(unittest.TestCase):
     from the high level interface. Further tests of this nature are done
     in TestDialectRegistry.
     """
+    def _test_arg_valid(self, ctor, arg):
+        self.assertRaises(TypeError, ctor)
+        self.assertRaises(TypeError, ctor, None)
+        self.assertRaises(TypeError, ctor, arg, bad_attr = 0)
+        self.assertRaises(TypeError, ctor, arg, delimiter = 0)
+        self.assertRaises(TypeError, ctor, arg, delimiter = 'XX')
+        self.assertRaises(csv.Error, ctor, arg, 'foo')
+        self.assertRaises(TypeError, ctor, arg, delimiter=None)
+        self.assertRaises(TypeError, ctor, arg, delimiter=1)
+        self.assertRaises(TypeError, ctor, arg, quotechar=1)
+        self.assertRaises(TypeError, ctor, arg, lineterminator=None)
+        self.assertRaises(TypeError, ctor, arg, lineterminator=1)
+        self.assertRaises(TypeError, ctor, arg, quoting=None)
+        self.assertRaises(TypeError, ctor, arg,
+                          quoting=csv.QUOTE_ALL, quotechar='')
+        self.assertRaises(TypeError, ctor, arg,
+                          quoting=csv.QUOTE_ALL, quotechar=None)
+
     def test_reader_arg_valid(self):
-        self.assertRaises(TypeError, csv.reader)
-        self.assertRaises(TypeError, csv.reader, None)
-        self.assertRaises(AttributeError, csv.reader, [], bad_attr = 0)
-        self.assertRaises(csv.Error, csv.reader, [], 'foo')
-        class BadClass:
-            def __init__(self):
-                raise IOError
-        self.assertRaises(IOError, csv.reader, [], BadClass)
-        self.assertRaises(TypeError, csv.reader, [], None)
-        class BadDialect:
-            bad_attr = 0
-        self.assertRaises(AttributeError, csv.reader, [], BadDialect)
+        self._test_arg_valid(csv.reader, [])
 
     def test_writer_arg_valid(self):
-        self.assertRaises(TypeError, csv.writer)
-        self.assertRaises(TypeError, csv.writer, None)
-        self.assertRaises(AttributeError, csv.writer, StringIO(), bad_attr = 0)
+        self._test_arg_valid(csv.writer, StringIO())
 
-    def _test_attrs(self, obj):
+    def _test_default_attrs(self, ctor, *args):
+        obj = ctor(*args)
+        # Check defaults
         self.assertEqual(obj.dialect.delimiter, ',')
-        obj.dialect.delimiter = '\t'
-        self.assertEqual(obj.dialect.delimiter, '\t')
-        self.assertRaises(TypeError, delattr, obj.dialect, 'delimiter')
-        self.assertRaises(TypeError, setattr, obj.dialect,
-                          'lineterminator', None)
-        obj.dialect.escapechar = None
+        self.assertEqual(obj.dialect.doublequote, True)
         self.assertEqual(obj.dialect.escapechar, None)
-        self.assertRaises(TypeError, delattr, obj.dialect, 'quoting')
-        self.assertRaises(TypeError, setattr, obj.dialect, 'quoting', None)
-        obj.dialect.quoting = csv.QUOTE_MINIMAL
+        self.assertEqual(obj.dialect.lineterminator, "\r\n")
+        self.assertEqual(obj.dialect.quotechar, '"')
         self.assertEqual(obj.dialect.quoting, csv.QUOTE_MINIMAL)
+        self.assertEqual(obj.dialect.skipinitialspace, False)
+        self.assertEqual(obj.dialect.strict, False)
+        # Try deleting or changing attributes (they are read-only)
+        self.assertRaises(TypeError, delattr, obj.dialect, 'delimiter')
+        self.assertRaises(TypeError, setattr, obj.dialect, 'delimiter', ':')
+        self.assertRaises(AttributeError, delattr, obj.dialect, 'quoting')
+        self.assertRaises(AttributeError, setattr, obj.dialect,
+                          'quoting', None)
 
     def test_reader_attrs(self):
-        self._test_attrs(csv.reader([]))
+        self._test_default_attrs(csv.reader, [])
 
     def test_writer_attrs(self):
-        self._test_attrs(csv.writer(StringIO()))
+        self._test_default_attrs(csv.writer, StringIO())
+
+    def _test_kw_attrs(self, ctor, *args):
+        # Now try with alternate options
+        kwargs = dict(delimiter=':', doublequote=False, escapechar='\\',
+                      lineterminator='\r', quotechar='*',
+                      quoting=csv.QUOTE_NONE, skipinitialspace=True,
+                      strict=True)
+        obj = ctor(*args, **kwargs)
+        self.assertEqual(obj.dialect.delimiter, ':')
+        self.assertEqual(obj.dialect.doublequote, False)
+        self.assertEqual(obj.dialect.escapechar, '\\')
+        self.assertEqual(obj.dialect.lineterminator, "\r")
+        self.assertEqual(obj.dialect.quotechar, '*')
+        self.assertEqual(obj.dialect.quoting, csv.QUOTE_NONE)
+        self.assertEqual(obj.dialect.skipinitialspace, True)
+        self.assertEqual(obj.dialect.strict, True)
+
+    def test_reader_kw_attrs(self):
+        self._test_kw_attrs(csv.reader, [])
+
+    def test_writer_kw_attrs(self):
+        self._test_kw_attrs(csv.writer, StringIO())
+
+    def _test_dialect_attrs(self, ctor, *args):
+        # Now try with dialect-derived options
+        class dialect:
+            delimiter='-'
+            doublequote=False
+            escapechar='^'
+            lineterminator='$'
+            quotechar='#'
+            quoting=csv.QUOTE_ALL
+            skipinitialspace=True
+            strict=False
+        args = args + (dialect,)
+        obj = ctor(*args)
+        self.assertEqual(obj.dialect.delimiter, '-')
+        self.assertEqual(obj.dialect.doublequote, False)
+        self.assertEqual(obj.dialect.escapechar, '^')
+        self.assertEqual(obj.dialect.lineterminator, "$")
+        self.assertEqual(obj.dialect.quotechar, '#')
+        self.assertEqual(obj.dialect.quoting, csv.QUOTE_ALL)
+        self.assertEqual(obj.dialect.skipinitialspace, True)
+        self.assertEqual(obj.dialect.strict, False)
+
+    def test_reader_dialect_attrs(self):
+        self._test_dialect_attrs(csv.reader, [])
+
+    def test_writer_dialect_attrs(self):
+        self._test_dialect_attrs(csv.writer, StringIO())
+
 
     def _write_test(self, fields, expect, **kwargs):
         fd, name = tempfile.mkstemp()
@@ -69,12 +132,24 @@ class Test_Csv(unittest.TestCase):
             fileobj.close()
             os.unlink(name)
 
+    def _write_error_test(self, exc, fields, **kwargs):
+        fd, name = tempfile.mkstemp()
+        fileobj = os.fdopen(fd, "w+b")
+        try:
+            writer = csv.writer(fileobj, **kwargs)
+            with self.assertRaises(exc):
+                writer.writerow(fields)
+            fileobj.seek(0)
+            self.assertEqual(fileobj.read(), '')
+        finally:
+            fileobj.close()
+            os.unlink(name)
+
     def test_write_arg_valid(self):
-        self.assertRaises(csv.Error, self._write_test, None, '')
+        self._write_error_test(csv.Error, None)
         self._write_test((), '')
         self._write_test([None], '""')
-        self.assertRaises(csv.Error, self._write_test,
-                          [None], None, quoting = csv.QUOTE_NONE)
+        self._write_error_test(csv.Error, [None], quoting = csv.QUOTE_NONE)
         # Check that exceptions are passed up the chain
         class BadList:
             def __len__(self):
@@ -82,11 +157,11 @@ class Test_Csv(unittest.TestCase):
             def __getitem__(self, i):
                 if i > 2:
                     raise IOError
-        self.assertRaises(IOError, self._write_test, BadList(), '')
+        self._write_error_test(IOError, BadList())
         class BadItem:
             def __str__(self):
                 raise IOError
-        self.assertRaises(IOError, self._write_test, [BadItem()], '')
+        self._write_error_test(IOError, [BadItem()])
 
     def test_write_bigfield(self):
         # This exercises the buffer realloc functionality
@@ -95,25 +170,33 @@ class Test_Csv(unittest.TestCase):
                          (bigstring, bigstring))
 
     def test_write_quoting(self):
-        self._write_test(['a','1','p,q'], 'a,1,"p,q"')
-        self.assertRaises(csv.Error,
-                          self._write_test,
-                          ['a','1','p,q'], 'a,1,"p,q"',
-                          quoting = csv.QUOTE_NONE)
-        self._write_test(['a','1','p,q'], 'a,1,"p,q"',
+        self._write_test(['a',1,'p,q'], 'a,1,"p,q"')
+        self._write_error_test(csv.Error, ['a',1,'p,q'],
+                               quoting = csv.QUOTE_NONE)
+        self._write_test(['a',1,'p,q'], 'a,1,"p,q"',
                          quoting = csv.QUOTE_MINIMAL)
-        self._write_test(['a','1','p,q'], '"a",1,"p,q"',
+        self._write_test(['a',1,'p,q'], '"a",1,"p,q"',
                          quoting = csv.QUOTE_NONNUMERIC)
-        self._write_test(['a','1','p,q'], '"a","1","p,q"',
+        self._write_test(['a',1,'p,q'], '"a","1","p,q"',
+                         quoting = csv.QUOTE_ALL)
+        self._write_test(['a\nb',1], '"a\nb","1"',
                          quoting = csv.QUOTE_ALL)
 
     def test_write_escape(self):
-        self._write_test(['a','1','p,q'], 'a,1,"p,q"',
+        self._write_test(['a',1,'p,q'], 'a,1,"p,q"',
                          escapechar='\\')
-# FAILED - needs to be fixed [am]:
-#        self._write_test(['a','1','p,"q"'], 'a,1,"p,\\"q\\"',
-#                         escapechar='\\', doublequote = 0)
-        self._write_test(['a','1','p,q'], 'a,1,p\\,q',
+        self._write_error_test(csv.Error, ['a',1,'p,"q"'],
+                               escapechar=None, doublequote=False)
+        self._write_test(['a',1,'p,"q"'], 'a,1,"p,\\"q\\""',
+                         escapechar='\\', doublequote = False)
+        self._write_test(['"'], '""""',
+                         escapechar='\\', quoting = csv.QUOTE_MINIMAL)
+        self._write_test(['"'], '\\"',
+                         escapechar='\\', quoting = csv.QUOTE_MINIMAL,
+                         doublequote = False)
+        self._write_test(['"'], '\\"',
+                         escapechar='\\', quoting = csv.QUOTE_NONE)
+        self._write_test(['a',1,'p,q'], 'a,1,p\\,q',
                          escapechar='\\', quoting = csv.QUOTE_NONE)
 
     def test_writerows(self):
@@ -133,6 +216,18 @@ class Test_Csv(unittest.TestCase):
         finally:
             fileobj.close()
             os.unlink(name)
+
+    def test_write_float(self):
+        # Issue 13573: loss of precision because csv.writer
+        # uses str() for floats instead of repr()
+        orig_row = [1.234567890123, 1.0/7.0, 'abc']
+        f = StringIO()
+        c = csv.writer(f, quoting=csv.QUOTE_NONNUMERIC)
+        c.writerow(orig_row)
+        f.seek(0)
+        c = csv.reader(f, quoting=csv.QUOTE_NONNUMERIC)
+        new_row = next(c)
+        self.assertEqual(orig_row, new_row)
 
     def _read_test(self, input, expect, **kwargs):
         reader = csv.reader(input, **kwargs)
@@ -158,19 +253,84 @@ class Test_Csv(unittest.TestCase):
         self.assertRaises(csv.Error, self._read_test, ['a,b\nc,d'], [])
         self.assertRaises(csv.Error, self._read_test, ['a,b\r\nc,d'], [])
 
+    def test_read_eof(self):
+        self._read_test(['a,"'], [['a', '']])
+        self._read_test(['"a'], [['a']])
+        self._read_test(['^'], [['\n']], escapechar='^')
+        self.assertRaises(csv.Error, self._read_test, ['a,"'], [], strict=True)
+        self.assertRaises(csv.Error, self._read_test, ['"a'], [], strict=True)
+        self.assertRaises(csv.Error, self._read_test,
+                          ['^'], [], escapechar='^', strict=True)
+
     def test_read_escape(self):
-        self._read_test(['a,\\b,c'], [['a', '\\b', 'c']], escapechar='\\')
+        self._read_test(['a,\\b,c'], [['a', 'b', 'c']], escapechar='\\')
         self._read_test(['a,b\\,c'], [['a', 'b,c']], escapechar='\\')
         self._read_test(['a,"b\\,c"'], [['a', 'b,c']], escapechar='\\')
-        self._read_test(['a,"b,\\c"'], [['a', 'b,\\c']], escapechar='\\')
+        self._read_test(['a,"b,\\c"'], [['a', 'b,c']], escapechar='\\')
         self._read_test(['a,"b,c\\""'], [['a', 'b,c"']], escapechar='\\')
         self._read_test(['a,"b,c"\\'], [['a', 'b,c\\']], escapechar='\\')
 
+    def test_read_quoting(self):
+        self._read_test(['1,",3,",5'], [['1', ',3,', '5']])
+        self._read_test(['1,",3,",5'], [['1', '"', '3', '"', '5']],
+                        quotechar=None, escapechar='\\')
+        self._read_test(['1,",3,",5'], [['1', '"', '3', '"', '5']],
+                        quoting=csv.QUOTE_NONE, escapechar='\\')
+        # will this fail where locale uses comma for decimals?
+        self._read_test([',3,"5",7.3, 9'], [['', 3, '5', 7.3, 9]],
+                        quoting=csv.QUOTE_NONNUMERIC)
+        self._read_test(['"a\nb", 7'], [['a\nb', ' 7']])
+        self.assertRaises(ValueError, self._read_test,
+                          ['abc,3'], [[]],
+                          quoting=csv.QUOTE_NONNUMERIC)
+
     def test_read_bigfield(self):
-        # This exercises the buffer realloc functionality
-        bigstring = 'X' * 50000
-        bigline = '%s,%s' % (bigstring, bigstring)
-        self._read_test([bigline], [[bigstring, bigstring]])
+        # This exercises the buffer realloc functionality and field size
+        # limits.
+        limit = csv.field_size_limit()
+        try:
+            size = 50000
+            bigstring = 'X' * size
+            bigline = '%s,%s' % (bigstring, bigstring)
+            self._read_test([bigline], [[bigstring, bigstring]])
+            csv.field_size_limit(size)
+            self._read_test([bigline], [[bigstring, bigstring]])
+            self.assertEqual(csv.field_size_limit(), size)
+            csv.field_size_limit(size-1)
+            self.assertRaises(csv.Error, self._read_test, [bigline], [])
+            self.assertRaises(TypeError, csv.field_size_limit, None)
+            self.assertRaises(TypeError, csv.field_size_limit, 1, None)
+        finally:
+            csv.field_size_limit(limit)
+
+    def test_read_linenum(self):
+        for r in (csv.reader(['line,1', 'line,2', 'line,3']),
+                  csv.DictReader(['line,1', 'line,2', 'line,3'],
+                                 fieldnames=['a', 'b', 'c'])):
+            self.assertEqual(r.line_num, 0)
+            r.next()
+            self.assertEqual(r.line_num, 1)
+            r.next()
+            self.assertEqual(r.line_num, 2)
+            r.next()
+            self.assertEqual(r.line_num, 3)
+            self.assertRaises(StopIteration, r.next)
+            self.assertEqual(r.line_num, 3)
+
+    def test_roundtrip_quoteed_newlines(self):
+        fd, name = tempfile.mkstemp()
+        fileobj = os.fdopen(fd, "w+b")
+        try:
+            writer = csv.writer(fileobj)
+            self.assertRaises(TypeError, writer.writerows, None)
+            rows = [['a\nb','b'],['c','x\r\nd']]
+            writer.writerows(rows)
+            fileobj.seek(0)
+            for i, row in enumerate(csv.reader(fileobj)):
+                self.assertEqual(row, rows[i])
+        finally:
+            fileobj.close()
+            os.unlink(name)
 
 class TestDialectRegistry(unittest.TestCase):
     def test_registry_badargs(self):
@@ -183,11 +343,12 @@ class TestDialectRegistry(unittest.TestCase):
         self.assertRaises(csv.Error, csv.unregister_dialect, "nonesuch")
         self.assertRaises(TypeError, csv.register_dialect, None)
         self.assertRaises(TypeError, csv.register_dialect, None, None)
-        self.assertRaises(TypeError, csv.register_dialect, "nonesuch", None)
-        class bogus:
-            def __init__(self):
-                raise KeyError
-        self.assertRaises(KeyError, csv.register_dialect, "nonesuch", bogus)
+        self.assertRaises(TypeError, csv.register_dialect, "nonesuch", 0, 0)
+        self.assertRaises(TypeError, csv.register_dialect, "nonesuch",
+                          badargument=None)
+        self.assertRaises(TypeError, csv.register_dialect, "nonesuch",
+                          quoting=None)
+        self.assertRaises(TypeError, csv.register_dialect, [])
 
     def test_registry(self):
         class myexceltsv(csv.excel):
@@ -196,13 +357,17 @@ class TestDialectRegistry(unittest.TestCase):
         expected_dialects = csv.list_dialects() + [name]
         expected_dialects.sort()
         csv.register_dialect(name, myexceltsv)
-        try:
-            self.failUnless(isinstance(csv.get_dialect(name), myexceltsv))
-            got_dialects = csv.list_dialects()
-            got_dialects.sort()
-            self.assertEqual(expected_dialects, got_dialects)
-        finally:
-            csv.unregister_dialect(name)
+        self.addCleanup(csv.unregister_dialect, name)
+        self.assertEqual(csv.get_dialect(name).delimiter, '\t')
+        got_dialects = sorted(csv.list_dialects())
+        self.assertEqual(expected_dialects, got_dialects)
+
+    def test_register_kwargs(self):
+        name = 'fedcba'
+        csv.register_dialect(name, delimiter=';')
+        self.addCleanup(csv.unregister_dialect, name)
+        self.assertEqual(csv.get_dialect(name).delimiter, ';')
+        self.assertEqual([['X', 'Y', 'Z']], list(csv.reader(['X;Y;Z'], name)))
 
     def test_incomplete_dialect(self):
         class myexceltsv(csv.Dialect):
@@ -297,11 +462,23 @@ class TestDialectRegistry(unittest.TestCase):
 
     def test_bad_dialect(self):
         # Unknown parameter
-        self.assertRaises(AttributeError, csv.reader, [], bad_attr = 0)
+        self.assertRaises(TypeError, csv.reader, [], bad_attr = 0)
         # Bad values
         self.assertRaises(TypeError, csv.reader, [], delimiter = None)
         self.assertRaises(TypeError, csv.reader, [], quoting = -1)
         self.assertRaises(TypeError, csv.reader, [], quoting = 100)
+
+    # See issue #22995
+    ## def test_copy(self):
+    ##     for name in csv.list_dialects():
+    ##         dialect = csv.get_dialect(name)
+    ##         self.assertRaises(TypeError, copy.copy, dialect)
+
+    ## def test_pickle(self):
+    ##     for name in csv.list_dialects():
+    ##         dialect = csv.get_dialect(name)
+    ##         for proto in range(pickle.HIGHEST_PROTOCOL + 1):
+    ##             self.assertRaises(TypeError, pickle.dumps, dialect, proto)
 
 class TestCsvBase(unittest.TestCase):
     def readerAssertEqual(self, input, expected_result):
@@ -366,12 +543,16 @@ class TestDialectExcel(TestCsvBase):
         self.readerAssertEqual('a"b"c', [['a"b"c']])
 
     def test_quotes_and_more(self):
+        # Excel would never write a field containing '"a"b', but when
+        # reading one, it will return 'ab'.
         self.readerAssertEqual('"a"b', [['ab']])
 
     def test_lone_quote(self):
         self.readerAssertEqual('a"b', [['a"b']])
 
     def test_quote_and_quote(self):
+        # Excel would never write a field containing '"a" "b"', but when
+        # reading one, it will return 'a "b"'.
         self.readerAssertEqual('"a" "b"', [['a "b"']])
 
     def test_space_and_quote(self):
@@ -407,10 +588,10 @@ hammer and saw"
     def test_null(self):
         self.writerAssertEqual([], '')
 
-    def test_single(self):
+    def test_single_writer(self):
         self.writerAssertEqual([['abc']], 'abc\r\n')
 
-    def test_simple(self):
+    def test_simple_writer(self):
         self.writerAssertEqual([[1, 2, 'abc', 3, 4]], '1,2,abc,3,4\r\n')
 
     def test_quotes(self):
@@ -453,11 +634,15 @@ class TestDictFields(unittest.TestCase):
     ### "short" means there are fewer elements in the row than fieldnames
     def test_write_simple_dict(self):
         fd, name = tempfile.mkstemp()
-        fileobj = os.fdopen(fd, "w+b")
+        fileobj = io.open(fd, 'w+b')
         try:
             writer = csv.DictWriter(fileobj, fieldnames = ["f1", "f2", "f3"])
+            writer.writeheader()
+            fileobj.seek(0)
+            self.assertEqual(fileobj.readline(), "f1,f2,f3\r\n")
             writer.writerow({"f1": 10, "f3": "abc"})
             fileobj.seek(0)
+            fileobj.readline() # header
             self.assertEqual(fileobj.read(), "10,,abc\r\n")
         finally:
             fileobj.close()
@@ -466,6 +651,23 @@ class TestDictFields(unittest.TestCase):
     def test_write_no_fields(self):
         fileobj = StringIO()
         self.assertRaises(TypeError, csv.DictWriter, fileobj)
+
+    def test_write_fields_not_in_fieldnames(self):
+        fd, name = tempfile.mkstemp()
+        fileobj = os.fdopen(fd, "w+b")
+        try:
+            writer = csv.DictWriter(fileobj, fieldnames = ["f1", "f2", "f3"])
+            # Of special note is the non-string key (issue 19449)
+            with self.assertRaises(ValueError) as cx:
+                writer.writerow({"f4": 10, "f2": "spam", 1: "abc"})
+            exception = str(cx.exception)
+            self.assertIn("fieldnames", exception)
+            self.assertIn("'f4'", exception)
+            self.assertNotIn("'f2'", exception)
+            self.assertIn("1", exception)
+        finally:
+            fileobj.close()
+            os.unlink(name)
 
     def test_read_dict_fields(self):
         fd, name = tempfile.mkstemp()
@@ -487,9 +689,41 @@ class TestDictFields(unittest.TestCase):
             fileobj.write("f1,f2,f3\r\n1,2,abc\r\n")
             fileobj.seek(0)
             reader = csv.DictReader(fileobj)
+            self.assertEqual(reader.fieldnames, ["f1", "f2", "f3"])
             self.assertEqual(reader.next(), {"f1": '1', "f2": '2', "f3": 'abc'})
         finally:
             fileobj.close()
+            os.unlink(name)
+
+    # Two test cases to make sure existing ways of implicitly setting
+    # fieldnames continue to work.  Both arise from discussion in issue3436.
+    def test_read_dict_fieldnames_from_file(self):
+        fd, name = tempfile.mkstemp()
+        f = os.fdopen(fd, "w+b")
+        try:
+            f.write("f1,f2,f3\r\n1,2,abc\r\n")
+            f.seek(0)
+            reader = csv.DictReader(f, fieldnames=csv.reader(f).next())
+            self.assertEqual(reader.fieldnames, ["f1", "f2", "f3"])
+            self.assertEqual(reader.next(), {"f1": '1', "f2": '2', "f3": 'abc'})
+        finally:
+            f.close()
+            os.unlink(name)
+
+    def test_read_dict_fieldnames_chain(self):
+        import itertools
+        fd, name = tempfile.mkstemp()
+        f = os.fdopen(fd, "w+b")
+        try:
+            f.write("f1,f2,f3\r\n1,2,abc\r\n")
+            f.seek(0)
+            reader = csv.DictReader(f)
+            first = next(reader)
+            for row in itertools.chain([first], reader):
+                self.assertEqual(reader.fieldnames, ["f1", "f2", "f3"])
+                self.assertEqual(row, {"f1": '1', "f2": '2', "f3": 'abc'})
+        finally:
+            f.close()
             os.unlink(name)
 
     def test_read_long(self):
@@ -527,6 +761,7 @@ class TestDictFields(unittest.TestCase):
             fileobj.write("f1,f2\r\n1,2,abc,4,5,6\r\n")
             fileobj.seek(0)
             reader = csv.DictReader(fileobj, restkey="_rest")
+            self.assertEqual(reader.fieldnames, ["f1", "f2"])
             self.assertEqual(reader.next(), {"f1": '1', "f2": '2',
                                              "_rest": ["abc", "4", "5", "6"]})
         finally:
@@ -609,7 +844,7 @@ class TestArrayWrites(unittest.TestCase):
         try:
             writer = csv.writer(fileobj, dialect="excel")
             writer.writerow(a)
-            expected = ",".join([str(i) for i in a])+"\r\n"
+            expected = ",".join([repr(i) for i in a])+"\r\n"
             fileobj.seek(0)
             self.assertEqual(fileobj.read(), expected)
         finally:
@@ -625,7 +860,7 @@ class TestArrayWrites(unittest.TestCase):
         try:
             writer = csv.writer(fileobj, dialect="excel")
             writer.writerow(a)
-            expected = ",".join([str(i) for i in a])+"\r\n"
+            expected = ",".join([repr(i) for i in a])+"\r\n"
             fileobj.seek(0)
             self.assertEqual(fileobj.read(), expected)
         finally:
@@ -657,24 +892,30 @@ class TestDialectValidity(unittest.TestCase):
             lineterminator = '\r\n'
             quoting = csv.QUOTE_NONE
         d = mydialect()
+        self.assertEqual(d.quoting, csv.QUOTE_NONE)
 
         mydialect.quoting = None
-        self.assertRaises(csv.Error, mydialect)
-
-        mydialect.quoting = csv.QUOTE_NONE
-        mydialect.escapechar = None
         self.assertRaises(csv.Error, mydialect)
 
         mydialect.doublequote = True
         mydialect.quoting = csv.QUOTE_ALL
         mydialect.quotechar = '"'
         d = mydialect()
+        self.assertEqual(d.quoting, csv.QUOTE_ALL)
+        self.assertEqual(d.quotechar, '"')
+        self.assertTrue(d.doublequote)
 
         mydialect.quotechar = "''"
-        self.assertRaises(csv.Error, mydialect)
+        with self.assertRaises(csv.Error) as cm:
+            mydialect()
+        self.assertEqual(str(cm.exception),
+                         '"quotechar" must be an 1-character string')
 
         mydialect.quotechar = 4
-        self.assertRaises(csv.Error, mydialect)
+        with self.assertRaises(csv.Error) as cm:
+            mydialect()
+        self.assertEqual(str(cm.exception),
+                         '"quotechar" must be string, not int')
 
     def test_delimiter(self):
         class mydialect(csv.Dialect):
@@ -685,12 +926,31 @@ class TestDialectValidity(unittest.TestCase):
             lineterminator = '\r\n'
             quoting = csv.QUOTE_NONE
         d = mydialect()
+        self.assertEqual(d.delimiter, ";")
 
         mydialect.delimiter = ":::"
-        self.assertRaises(csv.Error, mydialect)
+        with self.assertRaises(csv.Error) as cm:
+            mydialect()
+        self.assertEqual(str(cm.exception),
+                         '"delimiter" must be an 1-character string')
+
+        mydialect.delimiter = ""
+        with self.assertRaises(csv.Error) as cm:
+            mydialect()
+        self.assertEqual(str(cm.exception),
+                         '"delimiter" must be an 1-character string')
+
+        mydialect.delimiter = u","
+        with self.assertRaises(csv.Error) as cm:
+            mydialect()
+        self.assertEqual(str(cm.exception),
+                         '"delimiter" must be string, not unicode')
 
         mydialect.delimiter = 4
-        self.assertRaises(csv.Error, mydialect)
+        with self.assertRaises(csv.Error) as cm:
+            mydialect()
+        self.assertEqual(str(cm.exception),
+                         '"delimiter" must be string, not int')
 
     def test_lineterminator(self):
         class mydialect(csv.Dialect):
@@ -701,12 +961,17 @@ class TestDialectValidity(unittest.TestCase):
             lineterminator = '\r\n'
             quoting = csv.QUOTE_NONE
         d = mydialect()
+        self.assertEqual(d.lineterminator, '\r\n')
 
         mydialect.lineterminator = ":::"
         d = mydialect()
+        self.assertEqual(d.lineterminator, ":::")
 
         mydialect.lineterminator = 4
-        self.assertRaises(csv.Error, mydialect)
+        with self.assertRaises(csv.Error) as cm:
+            mydialect()
+        self.assertEqual(str(cm.exception),
+                         '"lineterminator" must be a string')
 
 
 class TestSniffer(unittest.TestCase):
@@ -720,10 +985,9 @@ Stonecutters Seafood and Chop House, Lemont, IL, 12/19/02, Week Back
 'Harry''s':'Arlington Heights':'IL':'2/1/03':'Kimi Hayes'
 'Shark City':'Glendale Heights':'IL':'12/28/02':'Prezence'
 'Tommy''s Place':'Blue Island':'IL':'12/28/02':'Blue Sunday/White Crow'
-'Stonecutters Seafood and Chop House':'Lemont':'IL':'12/19/02':'Week Back'
+'Stonecutters ''Seafood'' and Chop House':'Lemont':'IL':'12/19/02':'Week Back'
 """
-
-    header = '''\
+    header1 = '''\
 "venue","city","state","date","performers"
 '''
     sample3 = '''\
@@ -738,10 +1002,48 @@ Stonecutters Seafood and Chop House, Lemont, IL, 12/19/02, Week Back
 47483648;43.0;170;abc;def
 '''
 
+    sample5 = "aaa\tbbb\r\nAAA\t\r\nBBB\t\r\n"
+    sample6 = "a|b|c\r\nd|e|f\r\n"
+    sample7 = "'a'|'b'|'c'\r\n'd'|e|f\r\n"
+
+# Issue 18155: Use a delimiter that is a special char to regex:
+
+    header2 = '''\
+"venue"+"city"+"state"+"date"+"performers"
+'''
+    sample8 = """\
+Harry's+ Arlington Heights+ IL+ 2/1/03+ Kimi Hayes
+Shark City+ Glendale Heights+ IL+ 12/28/02+ Prezence
+Tommy's Place+ Blue Island+ IL+ 12/28/02+ Blue Sunday/White Crow
+Stonecutters Seafood and Chop House+ Lemont+ IL+ 12/19/02+ Week Back
+"""
+    sample9 = """\
+'Harry''s'+ Arlington Heights'+ 'IL'+ '2/1/03'+ 'Kimi Hayes'
+'Shark City'+ Glendale Heights'+' IL'+ '12/28/02'+ 'Prezence'
+'Tommy''s Place'+ Blue Island'+ 'IL'+ '12/28/02'+ 'Blue Sunday/White Crow'
+'Stonecutters ''Seafood'' and Chop House'+ 'Lemont'+ 'IL'+ '12/19/02'+ 'Week Back'
+"""
+
     def test_has_header(self):
         sniffer = csv.Sniffer()
         self.assertEqual(sniffer.has_header(self.sample1), False)
-        self.assertEqual(sniffer.has_header(self.header+self.sample1), True)
+        self.assertEqual(sniffer.has_header(self.header1 + self.sample1),
+                         True)
+
+    def test_has_header_regex_special_delimiter(self):
+        sniffer = csv.Sniffer()
+        self.assertEqual(sniffer.has_header(self.sample8), False)
+        self.assertEqual(sniffer.has_header(self.header2 + self.sample8),
+                         True)
+
+    def test_guess_quote_and_delimiter(self):
+        sniffer = csv.Sniffer()
+        for header in (";'123;4';", "'123;4';", ";'123;4'", "'123;4'"):
+            dialect = sniffer.sniff(header, ",;")
+            self.assertEqual(dialect.delimiter, ';')
+            self.assertEqual(dialect.quotechar, "'")
+            self.assertIs(dialect.doublequote, False)
+            self.assertIs(dialect.skipinitialspace, False)
 
     def test_sniff(self):
         sniffer = csv.Sniffer()
@@ -758,86 +1060,113 @@ Stonecutters Seafood and Chop House, Lemont, IL, 12/19/02, Week Back
     def test_delimiters(self):
         sniffer = csv.Sniffer()
         dialect = sniffer.sniff(self.sample3)
-        self.assertEqual(dialect.delimiter, "0")
+        # given that all three lines in sample3 are equal,
+        # I think that any character could have been 'guessed' as the
+        # delimiter, depending on dictionary order
+        self.assertIn(dialect.delimiter, self.sample3)
         dialect = sniffer.sniff(self.sample3, delimiters="?,")
         self.assertEqual(dialect.delimiter, "?")
         dialect = sniffer.sniff(self.sample3, delimiters="/,")
         self.assertEqual(dialect.delimiter, "/")
         dialect = sniffer.sniff(self.sample4)
         self.assertEqual(dialect.delimiter, ";")
+        dialect = sniffer.sniff(self.sample5)
+        self.assertEqual(dialect.delimiter, "\t")
+        dialect = sniffer.sniff(self.sample6)
+        self.assertEqual(dialect.delimiter, "|")
+        dialect = sniffer.sniff(self.sample7)
+        self.assertEqual(dialect.delimiter, "|")
+        self.assertEqual(dialect.quotechar, "'")
+        dialect = sniffer.sniff(self.sample8)
+        self.assertEqual(dialect.delimiter, '+')
+        dialect = sniffer.sniff(self.sample9)
+        self.assertEqual(dialect.delimiter, '+')
+        self.assertEqual(dialect.quotechar, "'")
 
-if not hasattr(sys, "gettotalrefcount"):
-    if test_support.verbose: print "*** skipping leakage tests ***"
-else:
-    class NUL:
-        def write(s, *args):
-            pass
-        writelines = write
+    def test_doublequote(self):
+        sniffer = csv.Sniffer()
+        dialect = sniffer.sniff(self.header1)
+        self.assertFalse(dialect.doublequote)
+        dialect = sniffer.sniff(self.header2)
+        self.assertFalse(dialect.doublequote)
+        dialect = sniffer.sniff(self.sample2)
+        self.assertTrue(dialect.doublequote)
+        dialect = sniffer.sniff(self.sample8)
+        self.assertFalse(dialect.doublequote)
+        dialect = sniffer.sniff(self.sample9)
+        self.assertTrue(dialect.doublequote)
 
-    class TestLeaks(unittest.TestCase):
-        def test_create_read(self):
-            delta = 0
-            lastrc = sys.gettotalrefcount()
-            for i in xrange(20):
-                gc.collect()
-                self.assertEqual(gc.garbage, [])
-                rc = sys.gettotalrefcount()
-                csv.reader(["a,b,c\r\n"])
-                csv.reader(["a,b,c\r\n"])
-                csv.reader(["a,b,c\r\n"])
-                delta = rc-lastrc
-                lastrc = rc
-            # if csv.reader() leaks, last delta should be 3 or more
-            self.assertEqual(delta < 3, True)
+class NUL:
+    def write(s, *args):
+        pass
+    writelines = write
 
-        def test_create_write(self):
-            delta = 0
-            lastrc = sys.gettotalrefcount()
-            s = NUL()
-            for i in xrange(20):
-                gc.collect()
-                self.assertEqual(gc.garbage, [])
-                rc = sys.gettotalrefcount()
-                csv.writer(s)
-                csv.writer(s)
-                csv.writer(s)
-                delta = rc-lastrc
-                lastrc = rc
-            # if csv.writer() leaks, last delta should be 3 or more
-            self.assertEqual(delta < 3, True)
+@unittest.skipUnless(hasattr(sys, "gettotalrefcount"),
+                     'requires sys.gettotalrefcount()')
+class TestLeaks(unittest.TestCase):
+    def test_create_read(self):
+        delta = 0
+        lastrc = sys.gettotalrefcount()
+        for i in xrange(20):
+            gc.collect()
+            self.assertEqual(gc.garbage, [])
+            rc = sys.gettotalrefcount()
+            csv.reader(["a,b,c\r\n"])
+            csv.reader(["a,b,c\r\n"])
+            csv.reader(["a,b,c\r\n"])
+            delta = rc-lastrc
+            lastrc = rc
+        # if csv.reader() leaks, last delta should be 3 or more
+        self.assertEqual(delta < 3, True)
 
-        def test_read(self):
-            delta = 0
-            rows = ["a,b,c\r\n"]*5
-            lastrc = sys.gettotalrefcount()
-            for i in xrange(20):
-                gc.collect()
-                self.assertEqual(gc.garbage, [])
-                rc = sys.gettotalrefcount()
-                rdr = csv.reader(rows)
-                for row in rdr:
-                    pass
-                delta = rc-lastrc
-                lastrc = rc
-            # if reader leaks during read, delta should be 5 or more
-            self.assertEqual(delta < 5, True)
+    def test_create_write(self):
+        delta = 0
+        lastrc = sys.gettotalrefcount()
+        s = NUL()
+        for i in xrange(20):
+            gc.collect()
+            self.assertEqual(gc.garbage, [])
+            rc = sys.gettotalrefcount()
+            csv.writer(s)
+            csv.writer(s)
+            csv.writer(s)
+            delta = rc-lastrc
+            lastrc = rc
+        # if csv.writer() leaks, last delta should be 3 or more
+        self.assertEqual(delta < 3, True)
 
-        def test_write(self):
-            delta = 0
-            rows = [[1,2,3]]*5
-            s = NUL()
-            lastrc = sys.gettotalrefcount()
-            for i in xrange(20):
-                gc.collect()
-                self.assertEqual(gc.garbage, [])
-                rc = sys.gettotalrefcount()
-                writer = csv.writer(s)
-                for row in rows:
-                    writer.writerow(row)
-                delta = rc-lastrc
-                lastrc = rc
-            # if writer leaks during write, last delta should be 5 or more
-            self.assertEqual(delta < 5, True)
+    def test_read(self):
+        delta = 0
+        rows = ["a,b,c\r\n"]*5
+        lastrc = sys.gettotalrefcount()
+        for i in xrange(20):
+            gc.collect()
+            self.assertEqual(gc.garbage, [])
+            rc = sys.gettotalrefcount()
+            rdr = csv.reader(rows)
+            for row in rdr:
+                pass
+            delta = rc-lastrc
+            lastrc = rc
+        # if reader leaks during read, delta should be 5 or more
+        self.assertEqual(delta < 5, True)
+
+    def test_write(self):
+        delta = 0
+        rows = [[1,2,3]]*5
+        s = NUL()
+        lastrc = sys.gettotalrefcount()
+        for i in xrange(20):
+            gc.collect()
+            self.assertEqual(gc.garbage, [])
+            rc = sys.gettotalrefcount()
+            writer = csv.writer(s)
+            for row in rows:
+                writer.writerow(row)
+            delta = rc-lastrc
+            lastrc = rc
+        # if writer leaks during write, last delta should be 5 or more
+        self.assertEqual(delta < 5, True)
 
 # commented out for now - csv module doesn't yet support Unicode
 ## class TestUnicode(unittest.TestCase):

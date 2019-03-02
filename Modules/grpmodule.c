@@ -29,6 +29,7 @@ static PyStructSequence_Desc struct_group_type_desc = {
 };
 
 
+static int initialized;
 static PyTypeObject StructGrpType;
 
 static PyObject *
@@ -45,7 +46,11 @@ mkgrent(struct group *p)
         Py_DECREF(v);
         return NULL;
     }
+#ifdef __ILEC400__
+    for (member = (__ptr64)p->gr_mem; *member != NULL; member++) {
+#else
     for (member = p->gr_mem; *member != NULL; member++) {
+#endif
         PyObject *x = PyString_FromString(*member);
         if (x == NULL || PyList_Append(w, x) != 0) {
             Py_XDECREF(x);
@@ -58,7 +63,7 @@ mkgrent(struct group *p)
 
 #define SET(i,val) PyStructSequence_SET_ITEM(v, i, val)
     SET(setIndex++, PyString_FromString(p->gr_name));
-#ifdef __VMS
+#if defined(__VMS) || defined(__ILEC400__)
     SET(setIndex++, Py_None);
     Py_INCREF(Py_None);
 #else
@@ -75,7 +80,6 @@ mkgrent(struct group *p)
 
     if (PyErr_Occurred()) {
         Py_DECREF(v);
-        Py_DECREF(w);
         return NULL;
     }
 
@@ -83,12 +87,18 @@ mkgrent(struct group *p)
 }
 
 static PyObject *
-grp_getgrgid(PyObject *self, PyObject *args)
+grp_getgrgid(PyObject *self, PyObject *pyo_id)
 {
-    int gid;
+    PyObject *py_int_id;
+    unsigned int gid;
     struct group *p;
-    if (!PyArg_ParseTuple(args, "i:getgrgid", &gid))
-        return NULL;
+
+    py_int_id = PyNumber_Int(pyo_id);
+    if (!py_int_id)
+	    return NULL;
+    gid = PyInt_AS_LONG(py_int_id);
+    Py_DECREF(py_int_id);
+
     if ((p = getgrgid(gid)) == NULL) {
 	PyErr_Format(PyExc_KeyError, "getgrgid(): gid not found: %d", gid);
         return NULL;
@@ -97,27 +107,34 @@ grp_getgrgid(PyObject *self, PyObject *args)
 }
 
 static PyObject *
-grp_getgrnam(PyObject *self, PyObject *args)
+grp_getgrnam(PyObject *self, PyObject *pyo_name)
 {
+    PyObject *py_str_name;
     char *name;
     struct group *p;
-    if (!PyArg_ParseTuple(args, "s:getgrnam", &name))
-        return NULL;
+
+    py_str_name = PyObject_Str(pyo_name);
+    if (!py_str_name)
+	    return NULL;
+    name = PyString_AS_STRING(py_str_name);
+    
     if ((p = getgrnam(name)) == NULL) {
 	PyErr_Format(PyExc_KeyError, "getgrnam(): name not found: %s", name);
+	Py_DECREF(py_str_name);
         return NULL;
     }
+
+    Py_DECREF(py_str_name);
     return mkgrent(p);
 }
 
+#ifndef __ILEC400__
 static PyObject *
-grp_getgrall(PyObject *self, PyObject *args)
+grp_getgrall(PyObject *self, PyObject *ignore)
 {
     PyObject *d;
     struct group *p;
 
-    if (!PyArg_ParseTuple(args, ":getgrall"))
-        return NULL;
     if ((d = PyList_New(0)) == NULL)
         return NULL;
     setgrent();
@@ -126,6 +143,7 @@ grp_getgrall(PyObject *self, PyObject *args)
         if (v == NULL || PyList_Append(d, v) != 0) {
             Py_XDECREF(v);
             Py_DECREF(d);
+            endgrent();
             return NULL;
         }
         Py_DECREF(v);
@@ -133,19 +151,22 @@ grp_getgrall(PyObject *self, PyObject *args)
     endgrent();
     return d;
 }
+#endif
 
 static PyMethodDef grp_methods[] = {
-    {"getgrgid",	grp_getgrgid,	METH_VARARGS,
+    {"getgrgid",	grp_getgrgid,	METH_O,
      "getgrgid(id) -> tuple\n\
 Return the group database entry for the given numeric group ID.  If\n\
 id is not valid, raise KeyError."},
-    {"getgrnam",	grp_getgrnam,	METH_VARARGS,
+    {"getgrnam",	grp_getgrnam,	METH_O,
      "getgrnam(name) -> tuple\n\
 Return the group database entry for the given group name.  If\n\
 name is not valid, raise KeyError."},
-    {"getgrall",	grp_getgrall,	METH_VARARGS,
+#ifndef __ILEC400__
+    {"getgrall",	grp_getgrall,	METH_NOARGS,
      "getgrall() -> list of tuples\n\
 Return a list of all available group entries, in arbitrary order."},
+#endif
     {NULL,		NULL}		/* sentinel */
 };
 
@@ -171,7 +192,11 @@ initgrp(void)
 {
     PyObject *m, *d;
     m = Py_InitModule3("grp", grp_methods, grp__doc__);
+    if (m == NULL)
+        return;
     d = PyModule_GetDict(m);
-    PyStructSequence_InitType(&StructGrpType, &struct_group_type_desc);
+    if (!initialized)
+	    PyStructSequence_InitType(&StructGrpType, &struct_group_type_desc);
     PyDict_SetItemString(d, "struct_group", (PyObject *) &StructGrpType);
+    initialized = 1;
 }

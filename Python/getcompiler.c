@@ -3,6 +3,10 @@
 
 #include "Python.h"
 
+#ifdef __ILEC400__
+#define COMPILER "[ILEC]"
+#endif
+
 #ifndef COMPILER
 
 #ifdef __GNUC__

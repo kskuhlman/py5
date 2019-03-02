@@ -8,7 +8,7 @@ typedef struct {
     int  digits;
     int  dec;
     int  offset;
-    void *ptr;
+    void * __ptr128 ptr;
     PyObject *obj;
 } parmtype_t;
 
@@ -17,9 +17,7 @@ typedef struct {
     char  name[11];
     char  lib[11];
     int   parmCount;
-    int   parmLen;
     parmtype_t  types[10];
-    char  *parmbuf;
     _SYSPTR ptr;
 } OS400Program;
 
@@ -33,12 +31,16 @@ typedef struct {
 
 typedef struct {
     PyObject_HEAD
-    PyStringObject  *name;
+    void * __ptr128 obj;
+    void (*destructor)(void * __ptr128);
+} OS400ProcReturn;
+
+typedef struct {
+    PyObject_HEAD
+    char name[256];
     int   parmCount;
-    int   parmLen;
     parmtype_t  retval;
     parmtype_t  types[10];
-    char  *parmbuf;
     OS400Srvpgm *srvpgm;
     _OPENPTR ptr;
 } OS400Proc;
@@ -46,18 +48,20 @@ typedef struct {
 typedef struct {
     PyObject_HEAD
     char  name[15];
-    char  ccsid[6];
+    int  ccsid;
     iconv_t  cdencode;
     iconv_t  cddecode;
 } OS400Codec;
 
 extern DL_IMPORT(PyTypeObject) OS400Program_Type;
 extern DL_IMPORT(PyTypeObject) OS400Srvpgm_Type;
+extern DL_IMPORT(PyTypeObject) OS400ProcReturn_Type;
 extern DL_IMPORT(PyTypeObject) OS400Proc_Type;
 extern DL_IMPORT(PyTypeObject) OS400Codec_Type;
 
 #define OS400Program_Check(v)   ((v)->ob_type == &OS400Program_Type)
 #define OS400Srvpgm_Check(v)    ((v)->ob_type == &OS400Srvpgm_Type)
+#define OS400ProcReturn_Check(op) ((op)->ob_type == &OS400ProcReturn_Type)
 #define OS400Proc_Check(v)  ((v)->ob_type == &OS400Proc_Type)
 #define OS400Codec_Check(v)  ((v)->ob_type == &OS400Codec_Type)
 

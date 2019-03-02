@@ -1,29 +1,29 @@
 /*
- * file400  AS/400 Database(file) access 
- * 
- *--------------------------------------------------------------------
- * Copyright (c) 2001 by Per Gummedal.
+ * file400  AS/400 Database(file) access
  *
- * p.g@figu.no
- * 
+ *--------------------------------------------------------------------
+ * Copyright (c) 2010 by Per Gummedal.
+ *
+ * per.gummedal@gmail.com
+ *
  * By obtaining, using, and/or copying this software and/or its
  * associated documentation, you agree that you have read, understood,
  * and will comply with the following terms and conditions:
- * 
+ *
  * Permission to use, copy, modify, and distribute this software and its
  * associated documentation for any purpose and without fee is hereby
  * granted, provided that the above copyright notice appears in all
  * copies, and that both that copyright notice and this permission notice
- * appear in supporting documentation, and that the name of FIGU DATA AS
- * or the author not be used in advertising or publicity pertaining to
+ * appear in supporting documentation, and that the name of the author
+ * not to be used in advertising or publicity pertaining to
  * distribution of the software without specific, written prior
  * permission.
- * 
- * FIGU DATA AS AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO
- * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS.  IN NO EVENT SHALL FIGU DATA AS OR THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ *
+ * THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
+ * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL,
+ * INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER
+ * RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
  * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *------------------------------------------------------------------------
@@ -57,32 +57,69 @@
 static PyObject *file400Error;
 static PyObject *dummyClassName;
 static PyObject *dummyClass;
+static int default_strconv = 1;
 
-/* get length of as400 string */    
+static int
+file400_initFile(File400Object *f);
+
+static PyObject*
+File400_open(File400Object *self, PyObject *args, PyObject *keywds);
+
+static PyObject*
+File400_new(PyTypeObject *type, PyObject *args, PyObject *keywds);
+
+/* get length of as400 string */
 static int
 f_strlen(char *s, int len)
 {
-    len--;
-    while (len >= 0 && isspace(Py_CHARMASK(s[len])))
-        len--;
-    len++;
-    return len;    
+    char *p;
+    p = s + len - 1;
+    while (p >= s && *p == 0x40)
+        p--;
+    return (p - s) + 1;
 }
 
-/* convert field to Python format */    
+/* get length of ascii/utf8 string */
+static int
+f_utflen(char *s, int len)
+{
+    char *p;
+    p = s + len - 1;
+    while (p >= s && *p == 0x20)
+        p--;
+    return (p - s) + 1;
+}
+
+/* get length of unicode string */
+static int
+f_unilen(char *s, int len)
+{
+    unsigned short *p, *b;
+    b = (unsigned short *)s;
+    p = b + ((len - 2) / 2);
+    while (p >= b && *p == 0x0020)
+        p--;
+    return ((p - b) + 1) * 2;
+}
+
+/* convert field to Python format */
 static PyObject *
-f_cvtToPy(unsigned char *p, unsigned short type, int len,
-          int digits, int dec)
+f_cvtToPy(unsigned char * fb, fieldInfoStruct *field, int strconv)
 {
     short dsh, varlen;
+    char buf[100], *ss;
+    unsigned char *p;
     long dl;
+    int len, i;
     long long dll;
     float dfl;
     double ddbl;
     volatile _INTRPT_Hndlr_Parms_T  excpData;
 #pragma exception_handler(EXCP1, excpData, 0, _C2_MH_ESCAPE, _CTLA_HANDLE)
 
-    switch (type) {
+    p = fb + field->offset;
+    len = field->len;
+    switch (field->type) {
     /* binary */
     case 0:
         if (len == 2) {
@@ -93,7 +130,7 @@ f_cvtToPy(unsigned char *p, unsigned short type, int len,
             return PyInt_FromLong(dl);
         } else if (len == 8) {
             memcpy(&dll, p, 8);
-            return PyLong_FromLong(dll);
+            return PyLong_FromLongLong(dll);
         } else {
             PyErr_SetString(file400Error, "Data type error.");
             return NULL;
@@ -113,53 +150,77 @@ f_cvtToPy(unsigned char *p, unsigned short type, int len,
         }
     /* zoned */
     case 2:
-        if (dec == 0 && digits < 10) 
-            return PyInt_FromLong(QXXZTOI(p, digits, dec));
+        if (field->dec == 0 && field->digits < 10)
+            return PyInt_FromLong(QXXZTOI(p, field->digits, field->dec));
         else {
-            char buf[100], *ss;
-            zonedtostr((char *)buf, p, digits, dec, '.');  
-            if (dec == 0)
-                /*return PyLong_FromDouble(strtod((char *)buf, &ss));*/
+            zonedtostr((char *)buf, p, field->digits, field->dec, '.');
+            if (field->dec == 0)
                 return PyLong_FromLongLong(strtoll((char *)buf, &ss, 10));
             else
                 return PyFloat_FromDouble(strtod((char *)buf, &ss));
         }
     /* packed */
     case 3:
-        if (dec == 0 && digits < 10) 
-            return PyInt_FromLong(QXXPTOI(p, digits, dec));
+        if (field->dec == 0 && field->digits < 10)
+            return PyInt_FromLong(QXXPTOI(p, field->digits, field->dec));
         else {
-            char buf[100], *ss;
-            packedtostr((char *)buf, p, digits, dec, '.');  
-            if (dec == 0)
-                /*return PyLong_FromDouble(strtod((char *)buf, &ss));*/
+            packedtostr((char *)buf, p, field->digits, field->dec, '.');
+            if (field->dec == 0)
                 return PyLong_FromLongLong(strtoll((char *)buf, &ss, 10));
             else
                 return PyFloat_FromDouble(strtod((char *)buf, &ss));
         }
     /* char */
     case 4:
-        return PyString_FromStringAndSize(p, f_strlen(p, len));
-    /* dbcs (unicode) */
-    case 6:
-        return PyUnicode_FromWideChar((wchar_t *)p, len / 2);
+        if (strconv != 2 && field->ccsid == 1208)
+            return PyString_FromStringAndSize(p, f_utflen(p, len));
+        else if (strconv == 0 || field->ccsid == 65535)
+            return PyString_FromStringAndSize(p, len);
+        else if (strconv == 1)
+            return ebcdicToString(field->ccsid, p, f_strlen(p, len));
+        else
+            return ebcdicToUnicode(field->ccsid, p, f_strlen(p, len));
+    /* graphic (unicode) */
+    case 5:
+        if (strconv != 0 && (field->ccsid == 1200))
+            return PyUnicode_DecodeUTF16(p, f_unilen(p, len), "", 0);
+        else if (strconv != 0 && (field->ccsid == 13488)) {
+            return PyUnicode_FromUnicode((Py_UNICODE*)p, f_unilen(p, len) / 2);
+        } else
+            return PyString_FromStringAndSize(p, len);
     /* date, time, timestamp */
     case 11: case 12: case 13:
-        return PyString_FromStringAndSize(p, len);
+        if (strconv == 0 || field->ccsid == 65535 || field->ccsid == 1208)
+            return PyString_FromStringAndSize(p, len);
+        else if (strconv == 1)
+            return ebcdicToString(field->ccsid, p, len);
+        else
+            return ebcdicToUnicode(field->ccsid, p, len);
     /* varchar */
     case 0x8004:
         memcpy(&varlen, p, sizeof(short));
         p += sizeof(short);
-        return PyString_FromStringAndSize(p, f_strlen(p, varlen));
-    /* vardbcs (unicode) */
-    case 0x8006:
+        if (strconv != 2 && field->ccsid == 1208)
+            return PyString_FromStringAndSize(p, f_utflen(p, varlen));
+        else if (strconv == 0 || field->ccsid == 65535)
+            return PyString_FromStringAndSize(p, varlen);
+        else if (strconv == 1)
+            return ebcdicToString(field->ccsid, p, f_strlen(p, varlen));
+        else
+            return ebcdicToUnicode(field->ccsid, p, f_strlen(p, varlen));
+    /* vargraphic(unicode) */
+    case 0x8005:
         memcpy(&varlen, p, sizeof(short));
         p += sizeof(short);
-        return PyUnicode_FromWideChar((wchar_t *)p, varlen / sizeof(short));
+        if (strconv != 0 && field->ccsid == 1200)
+            return PyUnicode_DecodeUTF16(p, f_unilen(p, varlen), "", 0);
+        else if (strconv != 0 && field->ccsid == 13488)
+            return PyUnicode_FromUnicode((Py_UNICODE*)p, f_unilen(p, varlen) / 2);
+        else
+            return PyString_FromStringAndSize(p, varlen);
     default:
-        PyErr_SetString(file400Error, "Data type not supported.");
-        return NULL;
-    }   
+        return PyString_FromStringAndSize(p, len);
+    }
  EXCP1:
     PyErr_SetString(file400Error, "Data conversion error.");
     return NULL;
@@ -170,22 +231,26 @@ f_cvtToPy(unsigned char *p, unsigned short type, int len,
 static
 f_chgDecSep(char *buf, char decsep, int len)
 {
-    char *c1 = memchr(buf, '.', len);
+    char *c1;
+    c1 = memchr(buf, '.', len);
     if (c1 != NULL)
         c1[0] = decsep;
 }
 
-/* convert field to string */   
+/* convert field to string */
 static int
-f_addToString(char *buf, unsigned char *p, unsigned short type, 
-              int len, int digits, int dec, char decsep)
+f_addToString(char *buf, unsigned char *fb, fieldInfoStruct *field,
+              char decsep, int strconv)
 {
     short varlen;
+    int len;
     float dfl;
+    unsigned char *p;
     volatile _INTRPT_Hndlr_Parms_T  excpData;
 #pragma exception_handler(EXCP1, excpData, 0, _C2_MH_ESCAPE, _CTLA_HANDLE)
-
-    switch (type) {
+    p = fb + field->offset;
+    len = field->len;
+    switch (field->type) {
     /* binary */
     case 0:
         if (len == 2) {
@@ -201,7 +266,7 @@ f_addToString(char *buf, unsigned char *p, unsigned short type,
     /* float */
     case 1:
         if (len == 4) {
-            memcpy(&dfl, p, 4);         
+            memcpy(&dfl, p, 4);
             varlen = sprintf(buf, "%f", (double)dfl);
         }
         else if (len == 8) {
@@ -215,19 +280,20 @@ f_addToString(char *buf, unsigned char *p, unsigned short type,
         return varlen;
     /* zoned */
     case 2:
-        return strlen(zonedtostr(buf, p, digits, dec, decsep));
+        return strlen(zonedtostr(buf, p, field->digits,
+                    field->dec, decsep));
     /* packed */
     case 3:
-        return strlen(packedtostr(buf, p, digits, dec, decsep));
+        return strlen(packedtostr(buf, p, field->digits,
+                    field->dec, decsep));
     /* char */
     case 4:
-        len = f_strlen(p, len);
-        memcpy(buf, p, len);
-        return len;
-    /* dbcs (unicode) */
-    case 6:
-        len = wcstombs(buf, (wchar_t *)p, len);
-        return f_strlen(buf, len);
+        if (strconv == 1 && field->ccsid != 65535 && field->ccsid != 1208)
+            return ebcdicToStringBuffer(field->ccsid, p, f_strlen(p, len), buf);
+        else
+            len = f_strlen(p, len);
+            memcpy(buf, p, len);
+            return len;
     /* date, time, timestamp */
     case 11: case 12: case 13:
         len = f_strlen(p, len);
@@ -237,33 +303,29 @@ f_addToString(char *buf, unsigned char *p, unsigned short type,
     case 0x8004:
         memcpy(&varlen, p, sizeof(short));
         p += sizeof(short);
-        varlen = f_strlen(p, varlen);
-        memcpy(buf, p, varlen);
-        return varlen;
-    /* vardbcs (unicode) */
-    case 0x8006:
-        memcpy(&varlen, p, sizeof(short));
-        p += sizeof(short);
-        varlen = wcstombs(buf, (wchar_t *)p, varlen);
-        return f_strlen(buf, varlen);
+        if (strconv == 1 && field->ccsid != 65535 && field->ccsid != 1208)
+            return ebcdicToStringBuffer(field->ccsid, p, f_strlen(p, varlen), buf);
+        else {
+            varlen = f_strlen(p, varlen);
+            memcpy(buf, p, varlen);
+            return varlen;
+        }
     default:
         PyErr_SetString(file400Error, "Data type not supported.");
         return -1;
-    }   
+    }
  EXCP1:
     PyErr_SetString(file400Error, "Data conversion error.");
     return -1;
 }
 
 static int
-f_xmlescape(char *buf, char *s, int len) 
+f_xmlescape(char *buf, const char *s, int len)
 {
-    char *p, *q, *c = buf;
-    /* remove ending blanks */
-    len--;
-    while (len >= 0 && isspace(Py_CHARMASK(s[len])))
-        len--;
-    q = s + len + 1;
+    const char *q, *p;
+    char *c;
+    c = buf;
+    q = s + len;
     for (p = s; p < q; p++) {
         if (*p == '<' || *p == '>' || *p == '&') {
             if (p > s) {
@@ -271,8 +333,8 @@ f_xmlescape(char *buf, char *s, int len)
                 c += p - s;
             }
             if (*p == '<') c += strlen(strcpy(c, "&lt;"));
-            else if (*p == '>') strlen(strcpy(c, "&gt;"));
-            else if (*p == '&') strlen(strcpy(c, "&amp;"));
+            else if (*p == '>') c += strlen(strcpy(c, "&gt;"));
+            else if (*p == '&') c += strlen(strcpy(c, "&amp;"));
             s = p + 1;
         }
     }
@@ -285,15 +347,20 @@ f_xmlescape(char *buf, char *s, int len)
 
 
 static int
-f_addToXml(char *buf, char * name, unsigned char *p, unsigned short type,
-           int len, int digits, int dec, char decsep, int output)
+f_addToXml(char *buf, char * name, unsigned char *fb, fieldInfoStruct *field,
+           char decsep, int output, int strconv)
 {
-    char *c = buf;
+    PyObject *o;
+    char *c;
+    unsigned char *p, *tmpbuf;
     short varlen;
     float dfl;
+    int len, i;
     volatile _INTRPT_Hndlr_Parms_T  excpData;
 #pragma exception_handler(EXCP1, excpData, 0, _C2_MH_ESCAPE, _CTLA_HANDLE)
-
+    p = fb + field->offset;
+    len = field->len;
+    c = buf;
     if (output == OBJ) {
         c += strlen(strcpy(c, "<"));
         c += strlen(strcpy(c, name));
@@ -304,7 +371,8 @@ f_addToXml(char *buf, char * name, unsigned char *p, unsigned short type,
     } else {
         c += strlen(strcpy(c, "<v"));
     }
-    if (type == 0) {
+    switch (field->type) {
+    case 0:
         /* binary */
         if (len == 2) {
             c += strlen(strcpy(c, " t=\"i\">"));
@@ -319,11 +387,12 @@ f_addToXml(char *buf, char * name, unsigned char *p, unsigned short type,
             PyErr_SetString(file400Error, "Data type error.");
             return -1;
         }
-    } else if (type == 1) {
+        break;
+    case 1:
         /* float */
         c += strlen(strcpy(c, " t=\"f\">"));
         if (len == 4) {
-            memcpy(&dfl, p, 4);         
+            memcpy(&dfl, p, 4);
             varlen = sprintf(c, "%f", (double)dfl);
         }
         else if (len == 8) {
@@ -335,59 +404,111 @@ f_addToXml(char *buf, char * name, unsigned char *p, unsigned short type,
         if (decsep != '.')
             f_chgDecSep(c, decsep, varlen);
         c += varlen;
-    } else if (type == 2) {
+        break;
+    case 2:
         /* zoned */
-        if (dec == 0)
-            if (digits < 10)
+        if (field->dec == 0)
+            if (field->digits < 10)
                 c += strlen(strcpy(c, " t=\"i\">"));
             else
                 c += strlen(strcpy(c, " t=\"l\">"));
         else
             c += strlen(strcpy(c, " t=\"f\">"));
-        c += strlen(zonedtostr(c, p, digits, dec, decsep));
-    } else if (type == 3) {
+        c += strlen(zonedtostr(c, p, field->digits,
+                    field->dec, decsep));
+        break;
+    case 3:
         /* packed */
-        if (dec == 0)
-            if (digits < 10)
+        if (field->dec == 0)
+            if (field->digits < 10)
                 c += strlen(strcpy(c, " t=\"i\">"));
             else
                 c += strlen(strcpy(c, " t=\"l\">"));
         else
             c += strlen(strcpy(c, " t=\"f\">"));
-        c += strlen(packedtostr(c, p, digits, dec, decsep));
-    } else if (type == 4) {
+        c += strlen(packedtostr(c, p, field->digits,
+                    field->dec, decsep));
+        break;
+    case 4:
         /* char */
         c += strlen(strcpy(c, ">"));
-        c += f_xmlescape(c, p, len);
-    } else if (type == 4) {
-        /* dbcs (unicode) */
-        char buf[32000];
-        int len = wcstombs(buf, (wchar_t *)p, len);     
-        c += strlen(strcpy(c, ">"));
-        c += f_xmlescape(c, buf, len);
-    } else if (type >= 11 && type <= 13) {
+        if (strconv == 1 && field->ccsid != 65535 && field->ccsid != 1208) {
+            char sbuf[100];
+            if (len >= 100)
+                tmpbuf = PyMem_Malloc(len + 1);
+            else
+                tmpbuf = sbuf;
+            i = ebcdicToStringBuffer(field->ccsid, p, f_strlen(p, len), tmpbuf);
+            c += f_xmlescape(c, tmpbuf, i);
+            if (len >= 100)
+                PyMem_Free(tmpbuf);
+        } else if (strconv == 2 && field->ccsid != 65535) {
+            c += strlen(strcpy(c, " t=\"u\">"));
+            o = ebcdicToUnicode(field->ccsid, p, f_strlen(p, len));
+            c += f_xmlescape(c, PyUnicode_AS_DATA(o), PyUnicode_GET_DATA_SIZE(o));
+        } else {
+            c += f_xmlescape(c, p, len);
+        }
+        break;
+    case 5:
+        /* graphic */
+        if (strconv != 0 && (field->ccsid == 1200)) {
+            c += strlen(strcpy(c, " t=\"u\">"));
+            o = ebcdicToUnicode(field->ccsid, p, f_unilen(p, len));
+            c += f_xmlescape(c, PyUnicode_AS_DATA(o), PyUnicode_GET_DATA_SIZE(o));
+        } else if (strconv != 0 && (field->ccsid == 13488)) {
+            c += strlen(strcpy(c, " t=\"u\">"));
+            c += f_xmlescape(c, p, f_unilen(p, len));
+        } else {
+            c += strlen(strcpy(c, ">"));
+            c += f_xmlescape(c, p, len);
+        }
+        break;
+    case 11: case 12: case 13:
         /* date, time, timestamp */
         c += strlen(strcpy(c, ">"));
         memcpy(c, p, len);
         c += len;
-    } else if (type == 0x8004) {
+        break;
+    case 0x8004:
         /* varchar */
-        c += strlen(strcpy(c, ">"));
         memcpy(&varlen, p, sizeof(short));
         p += sizeof(short);
-        c += f_xmlescape(c, p, varlen);
-    } else if (type == 0x8006) {
-        /* vardbcs (unicode) */
-        char buf[32000];
-        c += strlen(strcpy(c, ">"));
+        if (strconv == 1 && field->ccsid != 65535 && field->ccsid != 1208) {
+            c += strlen(strcpy(c, ">"));
+            tmpbuf = PyMem_Malloc(len + 1);
+            i = ebcdicToStringBuffer(field->ccsid, p, f_strlen(p, varlen), tmpbuf);
+            c += f_xmlescape(c, tmpbuf, i);
+            PyMem_Free(tmpbuf);
+        } else if (strconv == 2 && field->ccsid != 65535) {
+            c += strlen(strcpy(c, " t=\"u\">"));
+            o = ebcdicToUnicode(field->ccsid, p, f_strlen(p, varlen));
+            c += f_xmlescape(c, PyUnicode_AS_DATA(o), PyUnicode_GET_DATA_SIZE(o));
+        } else {
+            c += strlen(strcpy(c, ">"));
+            c += f_xmlescape(c, p, varlen);
+        }
+        break;
+    case 0x8005:
+        /* vargraphic */
         memcpy(&varlen, p, sizeof(short));
         p += sizeof(short);
-        wcstombs(buf, (wchar_t *)p, varlen);        
-        c += f_xmlescape(c, buf, varlen);
-    } else {
-        PyErr_SetString(file400Error, "Data type not supported.");
-        return -1;
-    }   
+        if (strconv != 0 && (field->ccsid == 1200)) {
+            c += strlen(strcpy(c, " t=\"u\">"));
+            o = ebcdicToUnicode(field->ccsid, p, f_unilen(p, varlen));
+            c += f_xmlescape(c, PyUnicode_AS_DATA(o), PyUnicode_GET_DATA_SIZE(o));
+        } else if (strconv != 0 && (field->ccsid == 13488)) {
+            c += strlen(strcpy(c, " t=\"u\">"));
+            c += f_xmlescape(c, p, f_unilen(p, varlen));
+        } else {
+            c += strlen(strcpy(c, ">"));
+            c += f_xmlescape(c, p, varlen);
+        }
+        break;
+    default:
+        c += strlen(strcpy(c, ">"));
+        c += f_xmlescape(c, p, len);
+    }
     if (output == OBJ) {
         c += strlen(strcpy(c, "</"));
         c += strlen(strcpy(c, name));
@@ -402,52 +523,54 @@ f_addToXml(char *buf, char * name, unsigned char *p, unsigned short type,
     return -1;
 }
 
-/* convert field from Python format */  
+/* convert field from Python format */
 static int
-f_cvtFromPy(unsigned char *p, unsigned short type, int len,
-            int digits, int dec, PyObject *o)
+f_cvtFromPy(unsigned char *fb, fieldInfoStruct *field, PyObject *o, int strconv)
 {
     short dsh;
     long dlo;
     long long dll;
     float dfl;
     double ddbl;
-    char *c;
-    int i;
+    const char *c;
+    unsigned char *p;
+    int len, i, digits, dec;
     short ulen;
     volatile _INTRPT_Hndlr_Parms_T  excpData;
 #pragma exception_handler(EXCP1, excpData, 0, _C2_MH_ESCAPE, _CTLA_HANDLE)
 
-    switch (type) {
+    p = fb + field->offset;
+    len = field->len;
+    switch (field->type) {
     /* binary */
     case 0:
         if (PyInt_Check(o)) {
             if (len == 2) {
                 dsh = PyInt_AS_LONG(o);
                 memcpy(p, &dsh, len);
-                return 0;
+                break;
             } else if (len == 4) {
                 dlo = PyInt_AS_LONG(o);
                 memcpy(p, &dlo, len);
-                return 0;
+                break;
             } else if (len == 8) {
                 dll = PyInt_AS_LONG(o);
                 memcpy(p, &dll, len);
-                return 0;
+                break;
             }
         } else if (PyLong_Check(o)) {
             if (len == 2) {
                 dsh = PyLong_AsLong(o);
                 memcpy(p, &dsh, len);
-                return 0;
+                break;
             } else if (len == 4) {
                 dlo = PyLong_AsLong(o);
                 memcpy(p, &dlo, len);
-                return 0;
+                break;
             } else if (len == 8) {
                 dll = PyLong_AsLong(o);
                 memcpy(p, &dll, len);
-                return 0;
+                break;
             }
         }
         PyErr_SetString(file400Error, "Data conversion error.");
@@ -466,7 +589,7 @@ f_cvtFromPy(unsigned char *p, unsigned short type, int len,
                 return -1;
             }
             memcpy(p, &dfl, len);
-            return 0;
+            break;
         } else {
             if (PyInt_Check(o))
                 ddbl = PyInt_AS_LONG(o);
@@ -479,140 +602,182 @@ f_cvtFromPy(unsigned char *p, unsigned short type, int len,
                 return -1;
             }
             memcpy(p, &ddbl, len);
-            return 0;
+            break;
         }
     /* zoned */
     case 2:
+        digits = field->digits;
+        dec = field->dec;
         if (PyInt_Check(o)) {
             QXXITOZ(p, digits, dec, PyInt_AS_LONG(o));
-            return 0;
+            break;
         } else if (PyLong_Check(o)) {
             if ((digits - dec) < 10)
                 QXXITOZ(p, digits, dec, PyLong_AsLong(o));
             else
                 QXXDTOZ(p, digits, dec, PyLong_AsDouble(o));
-            return 0;
+            break;
         } else if (PyFloat_Check(o)) {
             QXXDTOZ(p, digits, dec, PyFloat_AS_DOUBLE(o));
-            return 0;
+            break;
         }
         PyErr_SetString(file400Error, "Data conversion error.");
         return -1;
     /* packed */
     case 3:
+        digits = field->digits;
+        dec = field->dec;
         if (PyInt_Check(o)) {
             QXXITOP(p, digits, dec, PyInt_AS_LONG(o));
-            return 0;
+            break;
         } else if (PyLong_Check(o)) {
             if ((digits - dec) < 10)
                 QXXITOP(p, digits, dec, PyLong_AsLong(o));
             else
                 QXXDTOP(p, digits, dec, PyLong_AsDouble(o));
-            return 0;
+            break;
         } else if (PyFloat_Check(o)) {
             QXXDTOP(p, digits, dec, PyFloat_AS_DOUBLE(o));
-            return 0;
+            break;
         }
         PyErr_SetString(file400Error, "Data conversion error.");
         return -1;
-    /* char */
-    case 4:
-        if (PyString_Check(o)) { 
+    /* char, date, time, timestamp */
+    case 4: case 11: case 12: case 13:
+        if (PyString_Check(o)) {
             c = PyString_AS_STRING(o);
             i = PyString_GET_SIZE(o);
-            if (i >= len)
-                memcpy(p, c, len);
-            else {
-                memcpy(p, c, i);
-                p += i;
-                memset(p, ' ', len - i);
+            if (strconv == 0 || field->ccsid == 65535 ||
+                    (strconv == 1 && field->ccsid == 1208)) {
+                if (i >= len)
+                    memcpy(p, c, len);
+                else {
+                    memcpy(p, c, i);
+                    p += i;
+                    memset(p, ' ', len - i);
+                }
+            } else
+                stringToEbcdic(field->ccsid, c, i, p, len);
+            break;
+        } else  if (PyUnicode_Check(o)) {
+            c = PyUnicode_AS_DATA(o);
+            i = PyUnicode_GET_DATA_SIZE(o);
+            if (strconv != 0 && field->ccsid == 1208) {
+                int j = convertstr(getConvDesc(13488, 1208), c, i, p, len);
+                if (j < len)
+                    memset(p + j, 0x20, len - j);
+            } else if (strconv != 0 && field->ccsid != 65535) {
+                unicodeToEbcdic(field->ccsid, c, i, p, len);
             }
-            return 0;
+            break;
         }
         PyErr_SetString(file400Error, "Data conversion error.");
         return -1;
-    /* DBCS (unicode) */
-    case 6:
-        if (PyUnicode_Check(o)) { 
-            ulen = len / sizeof(wchar_t);
-            PyUnicode_AsWideChar((PyUnicodeObject *)o, (wchar_t *)p, ulen);
-            if (PyUnicode_GET_SIZE(o) < ulen) {
-                p += len;
-                wmemset((wchar_t *)p, L' ', ulen - PyUnicode_GET_SIZE(o));
+    /* Graphic (unicode) */
+    case 5:
+        if (PyUnicode_Check(o)) {
+            short *s, *e;
+            c = PyUnicode_AS_DATA(o);
+            i = PyUnicode_GET_DATA_SIZE(o);
+            if (strconv == 0 || field->ccsid == 13488|| field->ccsid == 1200
+                    || field->ccsid == 65535) {
+                if (i >= len)
+                    memcpy(p, c, len);
+                else {
+                    memcpy(p, c, i);
+                    s = (short *)(p + i);
+                    e = s + len / 2;
+                    while (s < e) {
+                        *s = 0x0020;
+                        s++;
+                    }
+                }
+                break;
             }
-            return 0;
-        }
-        PyErr_SetString(file400Error, "Data conversion error.");
-        return -1;
-    /* date, time, timestamp */
-    case 11: case 12: case 13:
-        if (PyString_Check(o)) { 
-            c = PyString_AS_STRING(o);
-            i = PyString_GET_SIZE(o);
-            if (i >= len)
-                memcpy(p, c, len);
-            else {
-                memcpy(p, c, i);
-                p += i;
-                memset(p, ' ', len - i);
-            }
-            return 0;
         }
         PyErr_SetString(file400Error, "Data conversion error.");
         return -1;
     /* varchar */
     case 0x8004:
-        if (PyString_Check(o)) { 
+        if (PyString_Check(o)) {
             c = PyString_AS_STRING(o);
             i = PyString_GET_SIZE(o);
-            if (i > (len - 2))
-                dsh = (len - 2);
-            else
-                dsh = i;
-            memcpy(p, &dsh, 2);
-            p += 2;
-            memcpy(p, c, dsh);
-            return 0;
+            if (strconv == 0 || field->ccsid == 65535 ||
+                    (strconv == 1 && field->ccsid == 1208)) {
+                if (i > (len - 2))
+                    dsh = (len - 2);
+                else
+                    dsh = i;
+                memcpy(p, &dsh, 2);
+                memcpy(p + 2, c, dsh);
+            } else {
+                dsh = (short)convertstr(getConvDesc(1208, field->ccsid), c, i, p + 2, len - 2);
+                memcpy(p, &dsh, 2);
+            }
+            break;
+        } else  if (PyUnicode_Check(o)) {
+            if (strconv != 0 && field->ccsid != 65535) {
+                c = PyUnicode_AS_DATA(o);
+                i = PyUnicode_GET_DATA_SIZE(o);
+                dsh = (short)convertstr(getConvDesc(13488, field->ccsid), c, i, p + 2, len - 2);
+                memcpy(p, &dsh, 2);
+                break;
+            }
         }
         PyErr_SetString(file400Error, "Data conversion error.");
         return -1;
-    /* vardbc (unicode) */
-    case 0x8006:
-        if (PyUnicode_Check(o)) { 
-            ulen = len / sizeof(wchar_t);           
-            dsh = PyUnicode_GET_SIZE(o) * sizeof(wchar_t);
-            if (dsh > len)
-                dsh = len;
-            memcpy(p, &dsh, sizeof(short));
-            p += sizeof(short);
-            PyUnicode_AsWideChar((PyUnicodeObject *)o, (wchar_t *)p, ulen);
-            return 0;
+    /* Graphic (unicode) */
+    case 0x8005:
+        if (PyUnicode_Check(o)) {
+            short *s, *e;
+            c = PyUnicode_AS_DATA(o);
+            i = PyUnicode_GET_DATA_SIZE(o);
+            if (strconv == 0 || field->ccsid == 13488|| field->ccsid == 1200 || field->ccsid == 65535) {
+                if (i > (len - 2))
+                    dsh = (len - 2);
+                else
+                    dsh = i;
+                memcpy(p, &dsh, 2);
+                p += 2;
+                memcpy(p, c, dsh);
+                break;
+            }
         }
         PyErr_SetString(file400Error, "Data conversion error.");
         return -1;
     default:
+        if (PyString_Check(o)) {
+            c = PyString_AS_STRING(o);
+            i = PyString_GET_SIZE(o);
+            if (i >= len)
+                memcpy(p, c, len);
+            else
+                memcpy(p, c, i);
+            break;
+        }
         PyErr_SetString(file400Error, "Data type not supported.");
         return -1;
-    }   
+    }
+    return 0;
  EXCP1:
     PyErr_SetString(file400Error, "Data conversion error.");
     return -1;
 }
 
-/* clear the record */  
+/* clear the record */
 static int
-f_clear(File400Object *file, unsigned char *record)
+f_clear(File400Object *file, unsigned char * record)
 {
     int i;
-    unsigned char *p;
-    memset(record, ' ', file->recLen);
-    /* set all fields that don't hve blanks as default */ 
+    unsigned char * p;
+    short *s, *e;
+    /* set all fields that don't hve blanks as default */
     for (i = 0; i < file->fieldCount; i++) {
         p = record + file->fieldArr[i].offset;
         switch(file->fieldArr[i].type) {
         /* binary, float*/
         case 0: case 1:
-            memset(p, '\0', file->fieldArr[i].len);
+            memset(p, 0x00, file->fieldArr[i].len);
             break;
         /* zoned */
         case 2:
@@ -626,104 +791,87 @@ f_clear(File400Object *file, unsigned char *record)
             break;
         /* char */
         case 4:
+            if (file->fieldArr[i].ccsid == 1208)
+                memset(p, 0x20, file->fieldArr[i].len);
+            else
+                memset(p, 0x40, file->fieldArr[i].len);
             break;
-        /* DBCS (unicode) */
-        case 6:
-            wmemset((wchar_t *)p, L' ', (size_t)file->fieldArr[i].len / 2);
+        /* Grapics (unicode) */
+        case 5:
+            s = (short *)p;
+            e = s + file->fieldArr[i].len / 2;
+            while (s < e) {
+                *s = 0x0020;
+                s++;
+            }
             break;
         /* date, time, timestamp */
         case 11: case 12: case 13:
-            memset(p, '\0', file->fieldArr[i].len);
+            memset(p, 0x00, file->fieldArr[i].len);
             break;
         /* varchar */
-        case 0x8004: case 0x8006:
-            memset(p, '\0', sizeof(short));
+        case 0x8004: case 0x8005:
+            memset(p, 0x00, file->fieldArr[i].len);
             break;
         default:
-            memset(p, '\0', file->fieldArr[i].len);
+            memset(p, 0x00, file->fieldArr[i].len);
         }
     }
+    return 0;
 }
 
-/* internal routine to get field value from record */   
+/* internal routine to get field value from record */
 static PyObject *
 f_getFieldValue(File400Object *self, int pos, unsigned char *p)
 {
-    return f_cvtToPy(p + self->fieldArr[pos].offset,
-                     self->fieldArr[pos].type, self->fieldArr[pos].len,
-                     self->fieldArr[pos].digits, self->fieldArr[pos].dec);
+    return f_cvtToPy(p, &self->fieldArr[pos], self->strconv);
 }
 
-/* internal routine to get field value as string from record */ 
-static PyObject *
-f_getFieldString(File400Object *self, int pos, char decsep, unsigned char *p)
-{
-    PyObject *o;
-    o = f_cvtToPy(p + self->fieldArr[pos].offset,
-                     self->fieldArr[pos].type, self->fieldArr[pos].len,
-                     self->fieldArr[pos].digits, self->fieldArr[pos].dec);
-    if (PyString_Check(o))
-        return o;
-    else {      
-        PyObject *s1 = PyObject_Str(o);
-        if (decsep != '.' && PyFloat_Check(o)) {
-            char *c2 = strchr(PyString_AsString(s1), '.');
-        if (c2 != NULL)
-            c2[0] = decsep;
-        }
-        Py_DECREF(o);
-        return s1;
-    }
-}
-
-/* internal routine to get key value */ 
+/* internal routine to get key value */
 static PyObject *
 f_getKeyValue(File400Object *self, int pos)
 {
     unsigned char *p;
     p = self->fp->riofb.key;
-    p += self->keyArr[pos].offset;
-    return f_cvtToPy(p, self->keyArr[pos].type, self->keyArr[pos].len,
-                     self->keyArr[pos].digits, self->keyArr[pos].dec);
+    return f_cvtToPy(p, &self->keyArr[pos], self->strconv);
 }
 
-/* internal routine to set field value */   
+/* internal routine to set field value */
 static int
 f_setFieldValue(File400Object *self, int pos, PyObject *o, unsigned char *p)
 {
     if (self->omode == F4_OWRITE)
-        return f_cvtFromPy(p + self->fieldArr[pos].offset,
-                       self->fieldArr[pos].type, self->fieldArr[pos].len,
-                       self->fieldArr[pos].digits, self->fieldArr[pos].dec, o);
-    else    
-        return f_cvtFromPy(p + self->fieldArr[pos].offset,
-                       self->fieldArr[pos].type, self->fieldArr[pos].len,
-                       self->fieldArr[pos].digits, self->fieldArr[pos].dec, o);
+        return f_cvtFromPy(p, &self->fieldArr[pos], o, self->strconv);
+    else
+        return f_cvtFromPy(p, &self->fieldArr[pos], o, self->strconv);
 }
 
-/* internal routine to set key value */ 
+/* internal routine to set key value */
 static int
 f_setKeyValue(File400Object *self, int pos, PyObject *o)
 {
     unsigned char *p;
     p = self->fp->riofb.key;
-    p += self->keyArr[pos].offset;
-    return f_cvtFromPy(p, self->keyArr[pos].type, self->keyArr[pos].len,
-                       self->keyArr[pos].digits, self->keyArr[pos].dec, o);
+    return f_cvtFromPy(p, &self->keyArr[pos], o, self->strconv);
 }
 
 /* internal routine to convert string to upper */
 static PyObject *
 f_PyStringToUpper(PyObject *so) {
     PyObject *new;
-    char *s, *snew = NULL;
+    char *s, *snew;
     int i, c;
+    snew = NULL;
+    if (PyUnicode_Check(so))
+        so = PyUnicode_AsUTF8String(so);
+    else
+        Py_INCREF(so);
     s = PyString_AS_STRING(so);
     for (i = 0; i < 10; i++) {
         if (*s == '\0')
             break;
         c = Py_CHARMASK(*s);
-        if (islower(c)) {          
+        if (islower(c)) {
             if (snew == NULL) {
                 new = PyString_FromStringAndSize(NULL, PyString_GET_SIZE(so));
                 if (new == NULL) {
@@ -731,23 +879,23 @@ f_PyStringToUpper(PyObject *so) {
                     return Py_None;
                 }
                 snew = PyString_AS_STRING(new);
-                if (i > 0){ 
+                if (i > 0){
                     s -= i;
                     memcpy(snew, s, i);
                     s += i;
                     snew += i;
                 }
             }
-            *snew++ = toupper(c);              
+            *snew++ = toupper(c);
         } else if (snew != NULL)
-            *snew++ = c;                                
+            *snew++ = c;
         *s++;
     }
     if (snew) {
+        Py_DECREF(so);
         *snew = '\0';
         return new;
     } else {
-        Py_INCREF(so);
         return so;
     }
 }
@@ -763,32 +911,42 @@ f_system(char *cmd)
     return sts;
 }
 
-/* internal routine to get field position */    
+/* internal routine to get field position */
 static int
 f_getFieldPos(File400Object *self, PyObject *field)
 {
-    PyObject *posO;
-    int i;
+    PyObject *posO, *fup;
+    char *p;
+    int i = -1;
+
+    Py_INCREF(field);
     if (PyInt_Check(field)) {
         i = PyInt_AS_LONG(field);
         if (i >= self->fieldCount)
             i = -1;
-        return i;
-    } else if (PyString_Check(field)) {
+    } else if (PyString_Check(field) || PyUnicode_Check(field)) {
         /* convert to upper, first check */
-        field = f_PyStringToUpper(field);
         posO = PyDict_GetItem(self->fieldDict, field);
-        Py_DECREF(field);
-        if (posO == NULL)
-            return -1;
-        else {
-            return PyInt_AS_LONG(posO);
+        if (posO == NULL) {
+            fup = f_PyStringToUpper(field);
+            p = PyString_AS_STRING(fup);
+            if (*p == '_')
+                posO = PyDict_GetItemString(self->fieldDict, p + 1);
+            else
+                posO = PyDict_GetItem(self->fieldDict, fup);
+            Py_DECREF(fup);
+            /* Save field name for faster access next time */
+            if (posO != NULL)
+                PyDict_SetItem(self->fieldDict, field, posO);
         }
+        if (posO != NULL)
+            i = PyInt_AS_LONG(posO);
     }
-    return -1;
+    Py_DECREF(field);
+    return i;
 }
 
-/* internal routine to get key position */  
+/* internal routine to get key position */
 static int
 f_getKeyPos(File400Object *self, PyObject *field)
 {
@@ -799,7 +957,7 @@ f_getKeyPos(File400Object *self, PyObject *field)
         if (i >= self->keyCount)
             i = -1;
         return i;
-    } else if (PyString_Check(field)) {
+    } else if (PyString_Check(field) || PyUnicode_Check(field)) {
         /* convert to upper, first check */
         field = f_PyStringToUpper(field);
         posO = PyDict_GetItem(self->keyDict, field);
@@ -812,14 +970,34 @@ f_getKeyPos(File400Object *self, PyObject *field)
     return -1;
 }
 
-/* check if file is open */ 
+/* check if file is initialized */
+#pragma inline(f_initialize)
+static int
+f_initialize(File400Object *self)
+{
+    if (!self->fp && self->fieldDict == NULL && self->delay == 1) {
+        if (file400_initFile(self)) {
+            PyErr_SetString(file400Error, "Error getting file information.");
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* check if file is open */
 #pragma inline(f_isOpen)
 static int
 f_isOpen(File400Object *self)
 {
     if (!self->fp) {
-        PyErr_SetString(file400Error, "File not open.");
-        return 0;
+        if (self->delay == 1 && self->omode != 0) {
+            if (File400_open(self, Py_BuildValue("()"), NULL) == NULL) {
+                return 0;
+            }
+        } else {
+            PyErr_SetString(file400Error, "File not open.");
+            return 0;
+        }
     }
     return 1;
 }
@@ -841,6 +1019,7 @@ f_keylen(File400Object *self, PyObject *key, char *keyval)
         keyLen = 0;
         for (i = 0; i < keyCnt; i++)
             keyLen += self->keyArr[i].len;
+        self->curKeyLen = keyLen;
     } else if (keyval != NULL && PySequence_Check(key)) {
         PyObject *ko;
         /* check number of key fields */
@@ -854,17 +1033,20 @@ f_keylen(File400Object *self, PyObject *key, char *keyval)
         for (i = 0; i < keyCnt; i++) {
             ko = PySequence_GetItem(key, i);
             if (f_setKeyValue(self, i, ko))
-                return -1;          
+                return -1;
             Py_DECREF(ko);
             keyLen += self->keyArr[i].len;
         }
         memcpy(keyval, self->fp->riofb.key, self->keyLen);
         self->keyset = 1;
+        self->curKeyLen = keyLen;
+    } else if (key == Py_None && self->curKeyLen > 0) {
+        return self->curKeyLen;
     } else {
         PyErr_SetString(file400Error, "Key not valid.");
         return -1;
     }
-    return keyLen;  
+    return keyLen;
 }
 
 /* creates object from class or type */
@@ -889,19 +1071,27 @@ f_createObject(PyObject *cls)
 static void
 File400_dealloc(File400Object *self)
 {
+    int i;
     if (self->fp)
         _Rclose(self->fp);
     if (self->qry) {
         char buf[80];
-        sprintf(buf, "clof %s", self->file);
+        sprintf(buf, "clof %s", self->name);
         f_system(buf);
-        sprintf(buf, "dltovr %s", self->file);
+        sprintf(buf, "dltovr %s", self->name);
         f_system(buf);
     }
     if (self->recbuf) PyMem_Free(self->recbuf);
+    if (self->tmpbuf) PyMem_Free(self->tmpbuf);
     if (self->keybuf) PyMem_Free(self->keybuf);
-    if (self->fieldArr) PyMem_Free(self->fieldArr);
     if (self->keyArr) PyMem_Free(self->keyArr);
+    if (self->fieldArr) {
+        for (i = 0; i < self->fieldCount; i++) {
+            if (self->fieldArr[i].dft)
+                Py_XDECREF(self->fieldArr[i].dft);
+        }
+        PyMem_Free(self->fieldArr);
+    }
     Py_XDECREF(self->fieldDict);
     Py_XDECREF(self->keyDict);
     PyObject_Del(self);
@@ -913,34 +1103,52 @@ static char open_doc[] =
 Opens the file.  The mode can be 'r' for reading (default),\n\
 'a' for appending and 'r+' for read, update and append.\n\
 The options shold be a string with this format: 'arrseq=Y, secure=Y'.\n\
-Options:\n\ 
+Options:\n\
 arrseq  - Arrival sequence. (Y, N(default))\n\
 blkrcd  - Preforms record blocking. (Y(default), N)\n\
-ccsid   - Specifies the CCSID. Default is 0 (the job CCSID is used.)\n\
 commit  - Open under commitment control. (Y, N(default)).\n\
 secure  - Secure from overrides. (Y, N(default)).\n\
-You can sepcify a member to open."; 
+You can sepcify a member to open.";
 
 static PyObject*
 File400_open(File400Object *self, PyObject *args, PyObject *keywds)
 {
     char openKeyw[100], *smode;
     char fullName[35];
-    char *mbr = NULL;
     static char *kwlist[] = {"mode", "options", "mbr", NULL};
+    char *mbr = NULL;
     PyObject *mode = Py_None, *keyw = Py_None;
 
-    if (!PyArg_ParseTupleAndKeywords(args, keywds, "|OOs:File400", kwlist, 
+    if (!PyArg_ParseTupleAndKeywords(args, keywds, "|OOs:File400", kwlist,
                                       &mode, &keyw, &mbr))
         return NULL;
     if (self->fp) {
         PyErr_SetString(file400Error, "File already opened.");
         return NULL;
     }
+    /* init file */
+    if (self->fieldDict == NULL) {
+        if (PyString_Check(keyw) && strstr(PyString_AS_STRING(keyw), "secure=Y"))
+            self->override = '0';
+        if (file400_initFile(self)) {
+            PyErr_SetString(file400Error, "Error getting file information.");
+            return NULL;
+        }
+    }
     /* mode */
     if (mode == Py_None) {
-        self->omode = F4_OREAD;
-        strcpy(openKeyw, "rr");
+        if (self->omode == 0)
+            self->omode = F4_OREAD;
+        if (self->omode == F4_OREAD) {
+            strcpy(openKeyw, "rr");
+        } else if (self->omode == F4_OWRITE) {
+            strcpy(openKeyw, "ar");
+        } else if (self->omode == F4_OUPDATE) {
+            strcpy(openKeyw, "rr+");
+        } else {
+            PyErr_SetString(file400Error, "Open mode not valid.");
+            return NULL;
+        }
     } else {
         if (!PyString_Check(mode)) {
             PyErr_SetString(file400Error, "Open mode not a valid type.");
@@ -970,6 +1178,12 @@ File400_open(File400Object *self, PyObject *args, PyObject *keywds)
         strcat(openKeyw, ",");
         strcat(openKeyw, PyString_AS_STRING(keyw));
     }
+    /* always use ccsid = 65535, and do manual conversion  */
+    if (strstr(openKeyw, "ccsid")) {
+        PyErr_SetString(file400Error, "ccsid, not a valid option.");
+        return NULL;
+    }
+    strcat(openKeyw, ", ccsid=65535");
     /* block is default with read */
     if (self->omode == F4_OREAD && !strstr(openKeyw, "blkrcd"))
         strcat(openKeyw, ", blkrcd=Y");
@@ -977,7 +1191,7 @@ File400_open(File400Object *self, PyObject *args, PyObject *keywds)
     if (mbr)
         strcpy(self->mbr, mbr);
     /* build file name to open */
-    sprintf(fullName, "%s/%s(%s)", self->lib, self->file, self->mbr);
+    sprintf(fullName, "%s/%s(%s)", self->lib, self->name, self->mbr);
     /* open */
     self->fp = _Ropen(fullName, openKeyw);
     if (!self->fp) {
@@ -990,13 +1204,10 @@ File400_open(File400Object *self, PyObject *args, PyObject *keywds)
         return NULL;
     }
     /* clear the record */
-    if (self->omode == F4_OWRITE)
-        f_clear(self, (char *)(*(self->fp->out_buf)));
-    else {
+    if (self->omode != F4_OWRITE)
         /* position to before first will also initialize iofb */
         _Rlocate(self->fp, NULL, 0, __START);
-        f_clear(self, (char *)(*(self->fp->in_buf)));
-    }
+    f_clear(self, self->recbuf);
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -1012,16 +1223,16 @@ File400_close(File400Object *self, PyObject *args)
     char buf[80];
     if (!PyArg_ParseTuple(args, ":close"))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     if (_Rclose(self->fp)) {
         PyErr_SetString(file400Error, "Error closing file.");
         return NULL;
     }
     if (self->qry) {
-        sprintf(buf, "clof %s", self->file);
+        sprintf(buf, "clof %s", self->name);
         f_system(buf);
-        sprintf(buf, "dltovr %s", self->file);
+        sprintf(buf, "dltovr %s", self->name);
         f_system(buf);
     }
     self->fp = NULL;
@@ -1030,36 +1241,39 @@ File400_close(File400Object *self, PyObject *args)
 }
 
 static char posb_doc[] =
-"f.posb(key) -> returns 1 - if key found otherwise 0.\n\
+"f.posb(key[lock]) -> returns 1 - if key found otherwise 0.\n\
 \n\
 Positions before the first record that has a key equal to the specified key.\n\
 The key value can be a number that says number of keyfields\n\
-to use from the key buffer, or it can be a sequence of key values.";
+to use from the key buffer, or it can be a sequence of key values.\n\
+Use lock value, if given, on the following reads";
 
 static PyObject *
-File400_posb(File400Object *self, PyObject *args)
+File400_posb(File400Object *self, PyObject *args, PyObject *keywds)
 {
-    int  keyLen, found = 0;
+    int  keyLen, lock = -1, found = 0;
     PyObject *key;
+    static char *kwlist[] = {"key","lock", NULL};
 
-    if (!PyArg_ParseTuple(args, "O:posb", &key))
+    if (!PyArg_ParseTupleAndKeywords(args, keywds, "O|i:posb", kwlist, &key, &lock))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     keyLen = f_keylen(self, key, self->keybuf);
     if (keyLen < 0)
         return NULL;
+    self->lmode = lock;
     errno = 0;
-    _Rlocate(self->fp, self->fp->riofb.key, keyLen, 
-                     __KEY_EQ|__PRIOR|__NO_LOCK);   
+    _Rlocate(self->fp, self->fp->riofb.key, keyLen,
+                     __KEY_EQ|__PRIOR|__NO_LOCK);
     if (self->fp->riofb.num_bytes == 0) {
-        _Rlocate(self->fp, self->fp->riofb.key, keyLen, 
-                     __KEY_GT|__PRIOR|__NO_LOCK);   
+        _Rlocate(self->fp, self->fp->riofb.key, keyLen,
+                     __KEY_GT|__PRIOR|__NO_LOCK);
         if (self->fp->riofb.num_bytes == 0)
-            _Rlocate(self->fp, NULL, 0, __END); 
+            _Rlocate(self->fp, NULL, 0, __END);
     } else
         found = 1;
-    if (errno != 0 && errno != EIORECERR) {     
+    if (errno != 0 && errno != EIORECERR) {
         PyErr_SetString(file400Error, strerror(errno));
         return NULL;
     }
@@ -1068,31 +1282,34 @@ File400_posb(File400Object *self, PyObject *args)
 }
 
 static char posa_doc[] =
-"f.posa(key) -> None.\n\
+"f.posa(key[lock]) -> None.\n\
 \n\
 Positions after the last record that has a key equal to the specified key.\n\
 The key value can be a number that says number of keyfields\n\
-to use from the key buffer, or it can be a sequence of key values.";
+to use from the key buffer, or it can be a sequence of key values\n\
+Uses the lock value, if given, on the following reads";
 
 static PyObject *
-File400_posa(File400Object *self, PyObject *args)
+File400_posa(File400Object *self, PyObject *args, PyObject *keywds)
 {
-    int  keyLen;
+    int  keyLen, lock = -1;
     PyObject *key;
-    
-    if (!PyArg_ParseTuple(args, "O:posa", &key))
+    static char *kwlist[] = {"key","lock", NULL};
+
+    if (!PyArg_ParseTupleAndKeywords(args, keywds, "O|i:posa", kwlist, &key, &lock))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     keyLen = f_keylen(self, key ,self->keybuf);
     if (keyLen < 0)
         return NULL;
+    self->lmode = lock;
     errno = 0;
-    _Rlocate(self->fp, self->fp->riofb.key, keyLen, 
-                     __KEY_GT|__PRIOR|__NO_LOCK);   
+    _Rlocate(self->fp, self->fp->riofb.key, keyLen,
+                     __KEY_GT|__PRIOR|__NO_LOCK);
     if (self->fp->riofb.num_bytes == 0)
-        _Rlocate(self->fp, NULL, 0, __END); 
-    if (errno != 0 && errno != EIORECERR) {     
+        _Rlocate(self->fp, NULL, 0, __END);
+    if (errno != 0 && errno != EIORECERR) {
         PyErr_SetString(file400Error, strerror(errno));
         return NULL;
     }
@@ -1102,20 +1319,25 @@ File400_posa(File400Object *self, PyObject *args)
 }
 
 static char posf_doc[] =
-"f.posf() -> None.\n\
+"f.posf([lock]) -> None.\n\
 \n\
-Positions before the first record.";
+Positions before the first record.\n\
+Uses the lock value, if given, on the following reads";
 
 static PyObject *
-File400_posf(File400Object *self, PyObject *args)
+File400_posf(File400Object *self, PyObject *args, PyObject *keywds)
 {
-    if (!PyArg_ParseTuple(args, ":posf"))
+    int lock = -1;
+    static char *kwlist[] = {"lock", NULL};
+
+    if (!PyArg_ParseTupleAndKeywords(args, keywds, "|i:posf", kwlist, &lock))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
+    self->lmode = lock;
     errno = 0;
-    _Rlocate(self->fp, NULL, 0, __START);   
-    if (errno != 0 && errno != EIORECERR) {     
+    _Rlocate(self->fp, NULL, 0, __START);
+    if (errno != 0 && errno != EIORECERR) {
         PyErr_SetString(file400Error, strerror(errno));
         return NULL;
     }
@@ -1125,20 +1347,25 @@ File400_posf(File400Object *self, PyObject *args)
 }
 
 static char posl_doc[] =
-"f.posl() -> None.\n\
+"f.posl([lock]) -> None.\n\
 \n\
-Positions after the last record.";
+Positions after the last record.\n\
+Uses the lock value, if given, on the following reads";
 
 static PyObject *
-File400_posl(File400Object *self, PyObject *args)
+File400_posl(File400Object *self, PyObject *args, PyObject *keywds)
 {
-    if (!PyArg_ParseTuple(args, ":posl"))
+    int lock = -1;
+    static char *kwlist[] = {"lock", NULL};
+
+    if (!PyArg_ParseTupleAndKeywords(args, keywds, "|i:posl", kwlist, &lock))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
+    self->lmode = lock;
     errno = 0;
-    _Rlocate(self->fp, NULL, 0, __END); 
-    if (errno != 0 && errno != EIORECERR) {     
+    _Rlocate(self->fp, NULL, 0, __END);
+    if (errno != 0 && errno != EIORECERR) {
         PyErr_SetString(file400Error, strerror(errno));
         return NULL;
     }
@@ -1159,13 +1386,13 @@ File400_undelete(File400Object *self, PyObject *args)
 
     if (!PyArg_ParseTuple(args, "i:undelete", &rrn))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     if (self->omode != F4_OUPDATE) {
         PyErr_SetString(file400Error, "File not opened for update.");
         return NULL;
     }
-    _Rlocate(self->fp, NULL, rrn, __RRN_EQ);    
+    _Rlocate(self->fp, NULL, rrn, __RRN_EQ);
     if (self->fp->riofb.num_bytes == 1) {
         _Rupdate(self->fp, NULL, 0);
         return PyInt_FromLong(0);
@@ -1187,14 +1414,16 @@ File400_readrrn(File400Object *self, PyObject *args)
 
     if (!PyArg_ParseTuple(args, "i|i:readrrn", &rrn, &lock))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     if (lock == 0) {
         lockOpt = __NO_LOCK;
+        if (self->omode == F4_OUPDATE)
+            _Rrlslck(self->fp);
     }
     errno = 0;
-    _Rreadd(self->fp, NULL, 0, lockOpt, rrn);
-    if (errno != 0 && errno != EIORECERR) {     
+    _Rreadd(self->fp, self->recbuf, self->recLen, lockOpt, rrn);
+    if (errno != 0 && errno != EIORECERR) {
         PyErr_SetString(file400Error, strerror(errno));
         return NULL;
     }
@@ -1211,26 +1440,30 @@ to use from the key buffer, or it can be a sequence of key values.\n\
 Lock (for mode 'r+'). 1 - lock(default) 0 - no lock.";
 
 static PyObject *
-File400_readeq(File400Object *self, PyObject *args)
+File400_readeq(File400Object *self, PyObject *args, PyObject *keywds)
 {
     int keyLen, keyOpt, lock = 1, lockOpt = __DFT;
+    static char *kwlist[] = {"key","lock", NULL};
     PyObject *key = Py_None;
 
-    if (!PyArg_ParseTuple(args, "O|i:readeq", &key, &lock))
+    if (!PyArg_ParseTupleAndKeywords(args, keywds, "O|i:readeq", kwlist, &key, &lock))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     if (lock == 0) {
         lockOpt = __NO_LOCK;
+        if (self->omode == F4_OUPDATE)
+            _Rrlslck(self->fp);
     }
+    self->lmode = lock;
     errno = 0;
     keyLen = f_keylen(self, key ,self->keybuf);
     if (keyLen < 0)
         return NULL;
-    keyOpt = (lockOpt == __DFT) ? __KEY_EQ : __KEY_EQ | lockOpt;  
-    _Rreadk(self->fp, NULL, 0,
-            keyOpt, self->fp->riofb.key, keyLen);   
-    if (errno != 0 && errno != EIORECERR) {     
+    keyOpt = (lockOpt == __DFT) ? __KEY_EQ : __KEY_EQ | lockOpt;
+    _Rreadk(self->fp, self->recbuf, self->recLen,
+            keyOpt, self->fp->riofb.key, keyLen);
+    if (errno != 0 && errno != EIORECERR) {
         PyErr_SetString(file400Error, strerror(errno));
         return NULL;
     }
@@ -1247,14 +1480,22 @@ Lock (for mode 'r+'). 1 - lock(default) 0 - no lock.";
 static PyObject *
 File400_readn(File400Object *self, PyObject *args)
 {
-    int lock = 1, lockOpt = __DFT;
+    int lock = -1, lockOpt = __DFT;
 
     if (!PyArg_ParseTuple(args, "|i:readn", &lock))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
+    if (lock == -1) {
+        if (self->lmode != -1)
+            lock = self->lmode;
+        else
+            lock = 1;
+    }
     if (lock == 0) {
         lockOpt = __NO_LOCK;
+        if (self->omode == F4_OUPDATE)
+            _Rrlslck(self->fp);
     }
     errno = 0;
     /* locate if block count and last read was previous */
@@ -1262,12 +1503,9 @@ File400_readn(File400Object *self, PyObject *args)
         self->fp->riofb.blk_count > 0) {
         PyErr_SetString(file400Error, "Not valid to reverse the read sequence without new position operation, when in block mode.");
         return NULL;
-        /*_Rupfb(self->fp);
-        _Rlocate(self->fp, NULL, self->fp->riofb.rrn,
-                 __RRN_EQ|__NO_LOCK);   */
     }
-    _Rreadn(self->fp, NULL, 0, lockOpt);
-    if (errno != 0 && errno != EIORECERR) {     
+    _Rreadn(self->fp, self->recbuf, self->recLen, lockOpt);
+    if (errno != 0 && errno != EIORECERR) {
         PyErr_SetString(file400Error, strerror(errno));
         return NULL;
     }
@@ -1276,25 +1514,34 @@ File400_readn(File400Object *self, PyObject *args)
 }
 
 static char readne_doc[] =
-"f.readne(key[lock]) -> 0 (found), 1(not found).\n\
+"f.readne([key][lock]) -> 0 (found), 1(not found).\n\
 \n\
 Read next record if equal with the specified key.\n\
 The key should normally be a number that says number of keyfields\n\
 to use from the key buffer, or it can be a sequence of key values.\n\
+If it's left out, the key from last posa/posb/readeq is used.\n\
 Lock (for mode 'r+'). 1 - lock(default) 0 - no lock.";
 
 static PyObject *
 File400_readne(File400Object *self, PyObject *args)
 {
-    int keyLen, lock = 1, lockOpt = __DFT;
+    int keyLen, lock = -1, lockOpt = __DFT;
     PyObject *key = Py_None;
 
-    if (!PyArg_ParseTuple(args, "O|i:readne", &key, &lock))
+    if (!PyArg_ParseTuple(args, "|Oi:readne", &key, &lock))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
+    if (lock == -1) {
+        if (self->lmode != -1)
+            lock = self->lmode;
+        else
+            lock = 1;
+    }
     if (lock == 0) {
         lockOpt = __NO_LOCK;
+        if (self->omode == F4_OUPDATE)
+            _Rrlslck(self->fp);
     }
     errno = 0;
     keyLen = f_keylen(self, key ,self->keybuf);
@@ -1303,21 +1550,20 @@ File400_readne(File400Object *self, PyObject *args)
     /* read next and check key */
     if (!self->keyset)
         memcpy(self->keybuf, self->fp->riofb.key, self->keyLen);
-    memcpy(self->recbuf, (char *)(*(self->fp->in_buf)), self->recLen);
     /* locate if block count and last read was previous */
     if (self->fp->riofb.blk_filled_by == __READ_PREV &&
         self->fp->riofb.blk_count > 0) {
         PyErr_SetString(file400Error, "Not valid to reverse read sequence without new position when in block mode.");
         return NULL;
     }
-    _Rreadn(self->fp, NULL, 0, lockOpt);
+    _Rreadn(self->fp, self->tmpbuf, self->recLen, lockOpt);
     if (memcmp(self->keybuf, self->fp->riofb.key, keyLen)) {
-        memcpy((char *)(*(self->fp->in_buf)), self->recbuf, self->recLen);
         self->fp->riofb.num_bytes = 0;
         if (self->omode == F4_OUPDATE && lockOpt == __DFT)
             _Rrlslck(self->fp);
-    }
-    if (errno != 0 && errno != EIORECERR) {     
+    } else
+        memcpy(self->recbuf, self->tmpbuf, self->recLen);
+    if (errno != 0 && errno != EIORECERR) {
         PyErr_SetString(file400Error, strerror(errno));
         return NULL;
     }
@@ -1326,25 +1572,34 @@ File400_readne(File400Object *self, PyObject *args)
 }
 
 static char readpe_doc[] =
-"f.readpe(key[lock]) -> 0 (found), 1(not found).\n\
+"f.readpe([key][lock]) -> 0 (found), 1(not found).\n\
 \n\
 Read previous record if equal with the specified key.\n\
 The key should normally be a number that says number of keyfields\n\
 to use from the key buffer, or it can be a sequence of key values.\n\
+If it's left out, the key from last posa/posb/readeq is used.\n\
 Lock (for mode 'r+'). 1 - lock(default) 0 - no lock.";
 
 static PyObject *
 File400_readpe(File400Object *self, PyObject *args)
 {
-    int keyLen, lock = 1, lockOpt = __DFT;
+    int keyLen, lock = -1, lockOpt = __DFT;
     PyObject *key = Py_None;
 
     if (!PyArg_ParseTuple(args, "|Oi:readpe", &key, &lock))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
+    if (lock == -1) {
+        if (self->lmode != -1)
+            lock = self->lmode;
+        else
+            lock = 1;
+    }
     if (lock == 0) {
         lockOpt = __NO_LOCK;
+        if (self->omode == F4_OUPDATE)
+            _Rrlslck(self->fp);
     }
     errno = 0;
     keyLen = f_keylen(self, key ,self->keybuf);
@@ -1353,21 +1608,20 @@ File400_readpe(File400Object *self, PyObject *args)
     /* read previous and check key */
     if (!self->keyset)
         memcpy(self->keybuf, self->fp->riofb.key, self->keyLen);
-    memcpy(self->recbuf, (char *)(*(self->fp->in_buf)), self->recLen);
     /* locate if block count and last read was previous */
     if (self->fp->riofb.blk_filled_by == __READ_NEXT &&
         self->fp->riofb.blk_count > 0) {
         PyErr_SetString(file400Error, "Not valid to reverse read sequence without new position when in block mode.");
         return NULL;
     }
-    _Rreadp(self->fp, NULL, 0, lockOpt);
+    _Rreadp(self->fp, self->tmpbuf, self->recLen, lockOpt);
     if (memcmp(self->keybuf, self->fp->riofb.key, keyLen)) {
-        memcpy((char *)(*(self->fp->in_buf)), self->recbuf, self->recLen);
         self->fp->riofb.num_bytes = 0;
         if (self->omode == F4_OUPDATE && lockOpt == __DFT)
             _Rrlslck(self->fp);
-    }
-    if (errno != 0 && errno != EIORECERR) {     
+    } else
+        memcpy(self->recbuf, self->tmpbuf, self->recLen);
+    if (errno != 0 && errno != EIORECERR) {
         PyErr_SetString(file400Error, strerror(errno));
         return NULL;
     }
@@ -1384,13 +1638,21 @@ Lock (for mode 'r+'). 1 - lock(default) 0 - no lock.";
 static PyObject *
 File400_readp(File400Object *self, PyObject *args)
 {
-    int lock = 1, lockOpt = __DFT;
+    int lock = -1, lockOpt = __DFT;
     if (!PyArg_ParseTuple(args, "|i:readp", &lock))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
+    if (lock == -1) {
+        if (self->lmode != -1)
+            lock = self->lmode;
+        else
+            lock = 1;
+    }
     if (lock == 0) {
         lockOpt = __NO_LOCK;
+        if (self->omode == F4_OUPDATE)
+            _Rrlslck(self->fp);
     }
     errno = 0;
     /* locate if block count and last read was previous */
@@ -1399,8 +1661,8 @@ File400_readp(File400Object *self, PyObject *args)
         PyErr_SetString(file400Error, "Not valid to reverse the read sequence without new position operation, when in block mode.");
         return NULL;
     }
-    _Rreadp(self->fp, NULL, 0, lockOpt);
-    if (errno != 0 && errno != EIORECERR) {     
+    _Rreadp(self->fp, self->recbuf, self->recLen, lockOpt);
+    if (errno != 0 && errno != EIORECERR) {
         PyErr_SetString(file400Error, strerror(errno));
         return NULL;
     }
@@ -1415,19 +1677,24 @@ Read first record into the buffer.\n\
 Lock (for mode 'r+'). 1 - lock(default) 0 - no lock.";
 
 static PyObject *
-File400_readf(File400Object *self, PyObject *args)
+File400_readf(File400Object *self, PyObject *args, PyObject *keywds)
 {
     int lock = 1, lockOpt = __DFT;
-    if (!PyArg_ParseTuple(args, "|i:readf", &lock))
+    static char *kwlist[] = {"lock", NULL};
+
+    if (!PyArg_ParseTupleAndKeywords(args, keywds, "|i:readf", kwlist, &lock))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     if (lock == 0) {
         lockOpt = __NO_LOCK;
+        if (self->omode == F4_OUPDATE)
+            _Rrlslck(self->fp);
     }
+    self->lmode = lock;
     errno = 0;
-    _Rreadf(self->fp, NULL, 0, lockOpt);
-    if (errno != 0 && errno != EIORECERR) {     
+    _Rreadf(self->fp, self->recbuf, self->recLen, lockOpt);
+    if (errno != 0 && errno != EIORECERR) {
         PyErr_SetString(file400Error, strerror(errno));
         return NULL;
     }
@@ -1442,19 +1709,24 @@ Read last record into the buffer.\n\
 Lock (for mode 'r+'). 1 - lock(default) 0 - no lock.";
 
 static PyObject *
-File400_readl(File400Object *self, PyObject *args)
+File400_readl(File400Object *self, PyObject *args, PyObject *keywds)
 {
     int lock = 1, lockOpt = __DFT;
-    if (!PyArg_ParseTuple(args, "|i:readl", &lock))
+    static char *kwlist[] = {"lock", NULL};
+
+    if (!PyArg_ParseTupleAndKeywords(args, keywds, "|i:readl", kwlist, &lock))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     if (lock == 0) {
         lockOpt = __NO_LOCK;
+        if (self->omode == F4_OUPDATE)
+            _Rrlslck(self->fp);
     }
+    self->lmode = lock;
     errno = 0;
-    _Rreadl(self->fp, NULL, 0, lockOpt);
-    if (errno != 0 && errno != EIORECERR) {     
+    _Rreadl(self->fp, self->recbuf, self->recLen, lockOpt);
+    if (errno != 0 && errno != EIORECERR) {
         PyErr_SetString(file400Error, strerror(errno));
         return NULL;
     }
@@ -1472,7 +1744,7 @@ File400_write(File400Object *self, PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ":write"))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     if (self->omode == F4_OREAD) {
         PyErr_SetString(file400Error, "File not opened for write.");
@@ -1481,10 +1753,7 @@ File400_write(File400Object *self, PyObject *args)
     /* save the key and restore it after write */
     if (self->keyLen > 0)
         memcpy(self->keybuf, self->fp->riofb.key, self->keyLen);
-    /* copy from input buffer if not opened for append */
-    if (self->omode != F4_OWRITE)
-        memcpy((char *)(*(self->fp->out_buf)), (char *)(*(self->fp->in_buf)), self->recLen);
-    _Rwrite(self->fp, NULL, self->recLen);
+    _Rwrite(self->fp, self->recbuf, self->recLen);
     if (self->fp->riofb.num_bytes < self->recLen) {
         PyErr_SetString(file400Error, "Write failed.");
         return NULL;
@@ -1505,7 +1774,7 @@ File400_delete(File400Object *self, PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ":delete"))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     if (self->omode != F4_OUPDATE) {
         PyErr_SetString(file400Error, "File not opened for update.");
@@ -1535,7 +1804,7 @@ File400_update(File400Object *self, PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ":update"))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     if (self->omode != F4_OUPDATE) {
         PyErr_SetString(file400Error, "File not opened for update.");
@@ -1544,7 +1813,7 @@ File400_update(File400Object *self, PyObject *args)
     /* save the key and restore it after update */
     if (self->keyLen > 0)
         memcpy(self->keybuf, self->fp->riofb.key, self->keyLen);
-    _Rupdate(self->fp, NULL, self->recLen);
+    _Rupdate(self->fp, self->recbuf, self->recLen);
     if (self->fp->riofb.num_bytes < self->recLen) {
         PyErr_SetString(file400Error, "Update failed.");
         return NULL;
@@ -1565,7 +1834,7 @@ File400_rlsLock(File400Object *self, PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ":rlsLock"))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     _Rrlslck(self->fp);
     Py_INCREF(Py_None);
@@ -1579,7 +1848,7 @@ Get information from the buffer.\n\
 f.get() - Get list of all values.\n\
 f.get('cusno') - Value of the field cusno. Same as f['cusno']\n\
 f.get(0) - Value of the first field. Same as f[0]\n\
-f.get(('cusno','name')) - Returns list of values.\n\  
+f.get(('cusno','name')) - Returns list of values.\n\
 f.get((0,1)) - Returns list of values.\n\
 output can have the following values:\n\
  0 - output as a list(default)\n\
@@ -1601,7 +1870,7 @@ File400_get(File400Object *self, PyObject *args, PyObject *keywds)
     if (!PyArg_ParseTupleAndKeywords(args, keywds, "|OiOO:get", kwlist,
                                      &o, &output, &cls, &labels))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     if (!cls || cls == Py_None)
         cls = dummyClass;
@@ -1609,13 +1878,14 @@ File400_get(File400Object *self, PyObject *args, PyObject *keywds)
         PyErr_SetString(file400Error, "cls not a valid type.");
         return NULL;
     }
-    /* if none, return all fields*/ 
+    /* if none, return all fields*/
     if (o == NULL || o == Py_None) {
         if (output == LIST) {
             obj = PyList_New(self->fieldCount);
             for (i = 0; i < self->fieldCount; i++) {
-                PyList_SetItem(obj, i, f_getFieldValue(self, i, 
-                   (unsigned char *)(*(self->fp->in_buf)))); 
+                va = f_getFieldValue(self, i, self->recbuf);
+                if (va == NULL) return NULL;
+                PyList_SetItem(obj, i, va);
             }
         } else {
             char *label;
@@ -1633,25 +1903,27 @@ File400_get(File400Object *self, PyObject *args, PyObject *keywds)
                 Py_DECREF(dict);
             } else
                 obj = dict = PyDict_New();
-            for (i = 0; i < self->fieldCount; i++) {                
+            for (i = 0; i < self->fieldCount; i++) {
                 if (PyTuple_Check(labels) && PyTuple_Size(labels) > i) {
                     label = PyString_AsString(PyTuple_GetItem(labels, i));
                 } else
                     label = self->fieldArr[i].name;
-                PyDict_SetItemString(dict, label, f_getFieldValue(self, 
-                    i,(unsigned char *)(*(self->fp->in_buf)))); 
+                va = f_getFieldValue(self, i, self->recbuf);
+                if (va == NULL) return NULL;
+                PyDict_SetItemString(dict, label, va);
+                Py_DECREF(va);
             }
         }
         return obj;
     }
     /* one value */
-    else if (PyInt_Check(o) || PyString_Check(o)) {
+    else if (PyInt_Check(o) || PyString_Check(o) || PyUnicode_Check(o)) {
         pos = f_getFieldPos(self, o);
         if (pos < 0) {
             PyErr_SetString(file400Error, "Parameter not valid.");
             return NULL;
         } else
-            return f_getFieldValue(self, pos, (unsigned char *)(*(self->fp->in_buf)));
+            return f_getFieldValue(self, pos, self->recbuf);
     }
     /* if tuple get specified fields */
     else if (PySequence_Check(o)) {
@@ -1682,22 +1954,26 @@ File400_get(File400Object *self, PyObject *args, PyObject *keywds)
             if (pos < 0 ) {
                 PyErr_SetString(file400Error, "Field not valid.");
                 Py_DECREF(obj);
-                return NULL;        
+                return NULL;
             } else {
-                if (output == LIST)
-                    PyList_SetItem(obj, i, f_getFieldValue(self, pos, (unsigned char *)(*(self->fp->in_buf)))); 
-                else {
+                if (output == LIST) {
+                    va = f_getFieldValue(self, pos, self->recbuf);
+                    if (va == NULL) return NULL;
+                    PyList_SetItem(obj, i, va);
+                } else {
                     if (PyTuple_Check(labels) && PyTuple_Size(labels) > i) {
                         label = PyString_AsString(PyTuple_GetItem(labels, i));
-                    } else 
+                    } else
                         label = self->fieldArr[pos].name;
-                    PyDict_SetItemString(dict, label,
-                       f_getFieldValue(self, pos, (unsigned char *)(*(self->fp->in_buf)))); 
+                    va = f_getFieldValue(self, pos, self->recbuf);
+                    if (va == NULL) return NULL;
+                    PyDict_SetItemString(dict, label, va);
+                    Py_DECREF(va);
                 }
             }
         }
         return obj;
-    } 
+    }
 }
 
 static char clear_doc[] =
@@ -1713,11 +1989,7 @@ File400_clear(File400Object *self, PyObject *args)
         return NULL;
     if (!f_isOpen(self))
         return NULL;
-    /* fill the record with blanks */
-    if (self->omode == F4_OWRITE)
-        f_clear(self, (char *)(*(self->fp->out_buf)));
-    else
-        f_clear(self, (char *)(*(self->fp->in_buf)));
+    f_clear(self, self->recbuf);
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -1729,7 +2001,7 @@ Get information from the key buffer.\n\
 f.getKey() - Get list of key values.\n\
 f.getKey('cusno') - Value of the key field cusno.\n\
 f.getKey(0) - Value of the first key field.\n\
-f.getKey(('cusno','name')) - Returns list of values.\n\  
+f.getKey(('cusno','name')) - Returns list of values.\n\
 f.getKey((0,1)) - Returns list of values.";
 
 static PyObject *
@@ -1740,29 +2012,31 @@ File400_getKey(File400Object *self, PyObject *args)
 
     if (!PyArg_ParseTuple(args, "|O:get", &o))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     if (self->keyCount <= 0) {
         PyErr_SetString(file400Error, "No key exists.");
         return NULL;
     }
-    /* if none, return all key values*/ 
+    /* if none, return all key values*/
     if (o == Py_None) {
         list = PyList_New(self->keyCount);
         for (i = 0; i < self->keyCount; i++) {
-            PyList_SetItem(list, i, f_getKeyValue(self, i)); 
+            va =  f_getKeyValue(self, i);
+            if (va == NULL) return NULL;
+            PyList_SetItem(list, i, va);
         }
         return list;
     }
     /* one value */
-    else if (PyInt_Check(o) || PyString_Check(o)) {
+    else if (PyInt_Check(o) || PyString_Check(o) || PyUnicode_Check(o)) {
         pos = f_getKeyPos(self, o);
         if (pos < 0) {
             PyErr_SetString(file400Error, "Parameter not valid.");
             return NULL;
         } else
             return f_getKeyValue(self, pos);
-    } 
+    }
     /* if sequence get specified key values */
     else if (PySequence_Check(o)) {
         len = PySequence_Length(o);
@@ -1774,9 +2048,11 @@ File400_getKey(File400Object *self, PyObject *args)
             if (pos < 0 ) {
                 PyErr_SetString(file400Error, "Key not valid.");
                 Py_DECREF(list);
-                return NULL;        
+                return NULL;
             } else {
-                PyList_SetItem(list, i, f_getKeyValue(self, pos)); 
+                va =  f_getKeyValue(self, pos);
+                if (va == NULL) return NULL;
+                PyList_SetItem(list, i, va);
             }
         }
         return list;
@@ -1794,7 +2070,7 @@ File400_getRrn(File400Object *self, PyObject *args)
     PyObject o;
     if (!PyArg_ParseTuple(args, ":getRrn"))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     return PyInt_FromLong(self->fp->riofb.rrn);
 }
@@ -1804,9 +2080,7 @@ static char getString_doc[] =
 \n\
 Get the field values as string seperated by tab.\n\
 f.getString() - All fields.\n\
-f.getString('cusno') - One field.\n\
-f.getString(0) - One field by psoition in record.\n\
-f.getString(('cusno','name')) - List of fields.\n\  
+f.getString(('cusno','name')) - List of fields.\n\
 f.getString((0,1)) - List of fields.\n\
 Default value for fieldsep(field seperator) is tab(\t).\n\
 Default value for decsep(decimal seperator) is .(periode).";
@@ -1818,75 +2092,68 @@ File400_getString(File400Object *self, PyObject *args, PyObject *keywds)
     char decsep = '.';
     char fieldsep = '\t';
     static char *kwlist[] = {"fields","fieldsep","decsep", NULL};
-    char *fb = (unsigned char *)(*(self->fp->in_buf));
+    char *fb;
+    char *buf;
+    int i, retval, len = 0, size = 4000;
+    PyObject *newstr, *fo;
 
     if (!PyArg_ParseTupleAndKeywords(args, keywds, "|Occ:getString", kwlist,
                                      &fields, &fieldsep, &decsep))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
-    /* one value */
-    if (PyInt_Check(fields) || PyString_Check(fields)) {
-        int pos = f_getFieldPos(self, fields);
-        if (pos < 0) {
-            PyErr_SetString(file400Error, "Parameter not valid.");
-            return NULL;
-        } else
-            return f_getFieldString(self, pos, decsep, fb);
-    } else {
-        char *buf;
-        int i, len = 0, size = 4000;
-        PyObject *newstr, *fo;
-        newstr = PyString_FromStringAndSize(NULL, size);
-        buf = PyString_AsString(newstr);
-        
-        /* if none, return all fields*/ 
-        if (fields == NULL || fields == Py_None) {
-            for (i = 0; i < self->fieldCount; i++) {
-                if (self->fieldArr[i].len > size - len - 50) {
-                    size += self->fieldArr[i].len;
+    fb= self->recbuf;
+
+    newstr = PyString_FromStringAndSize(NULL, size);
+    buf = PyString_AsString(newstr);
+    /* if none, return all fields*/
+    if (fields == NULL || fields == Py_None) {
+        for (i = 0; i < self->fieldCount; i++) {
+            if (self->fieldArr[i].len * 2 > size - len - 100) {
+                size = len + self->fieldArr[i].len * 2 + 100;
+                _PyString_Resize(&newstr, size);
+                buf = PyString_AsString(newstr);
+            }
+            retval = f_addToString(buf + len, fb, &self->fieldArr[i],
+                    decsep, self->strconv);
+            if (retval == -1)
+                return NULL;
+            len += retval;
+            *(buf + len) = fieldsep;
+            len++;
+        }
+    }
+    /* if tuple get specified fields */
+    else if (PySequence_Check(fields)) {
+        int pos, seqlen = PySequence_Length(fields);
+        for (i = 0; i < seqlen; i++) {
+            fo = PySequence_GetItem(fields, i);
+            pos = f_getFieldPos(self, fo);
+            Py_DECREF(fo);
+            if (pos < 0 ) {
+                PyErr_SetString(file400Error, "Field not valid.");
+                return NULL;
+            } else {
+                if (self->fieldArr[pos].len * 2 > size - 100) {
+                    size = len + self->fieldArr[pos].len * 2 + 100;
                     _PyString_Resize(&newstr, size);
+                    buf = PyString_AsString(newstr);
                 }
-                len += f_addToString(buf + len, fb + self->fieldArr[i].offset,
-                                     self->fieldArr[i].type, 
-                                     self->fieldArr[i].len,
-                                     self->fieldArr[i].digits,
-                                     self->fieldArr[i].dec, decsep);                
+                retval = f_addToString(buf + len, fb, &self->fieldArr[pos],
+                        decsep, self->strconv);
+                if (retval == -1)
+                    return NULL;
+                len += retval;
                 *(buf + len) = fieldsep;
                 len++;
             }
         }
-        /* if tuple get specified fields */
-        else if (PySequence_Check(fields)) {
-            int pos, seqlen = PySequence_Length(fields);
-            for (i = 0; i < seqlen; i++) {
-                fo = PySequence_GetItem(fields, i);
-                pos = f_getFieldPos(self, fo);
-                Py_DECREF(fo);
-                if (pos < 0 ) {
-                    PyErr_SetString(file400Error, "Field not valid.");
-                    return NULL;        
-                } else {
-                    if (self->fieldArr[pos].len > size - len - 50) {
-                        size += self->fieldArr[pos].len;
-                        _PyString_Resize(&newstr, size);
-                    }
-                    len += f_addToString(buf + len, fb + self->fieldArr[pos].offset,
-                                        self->fieldArr[pos].type, 
-                                        self->fieldArr[pos].len,
-                                        self->fieldArr[pos].digits,
-                                        self->fieldArr[pos].dec, decsep);
-                    *(buf + len) = fieldsep;
-                    len++;
-                }
-            }
-        } else {
-            PyErr_SetString(file400Error, "Field not valid.");
-            return NULL;        
-        }
-        _PyString_Resize(&newstr, len);
-        return newstr;
+    } else {
+        PyErr_SetString(file400Error, "Field not valid.");
+        return NULL;
     }
+    _PyString_Resize(&newstr, len);
+    return newstr;
 }
 
 static char getXml_doc[] =
@@ -1896,7 +2163,7 @@ Get the field values as a xml string.\n\
 f.getXml() - All fields.\n\
 f.getXml('cusno') - One field.\n\
 f.getXml(0) - One field by position in record.\n\
-f.getXml(('cusno','name')) - List of fields.\n\  
+f.getXml(('cusno','name')) - List of fields.\n\
 f.getXml((0,1)) - List of fields.\n\
 f.getXml((0,1),('pn','desc')) - Include labels to use.\n\
 Default value for decsep(decimal seperator) is .(periode).\n\
@@ -1915,20 +2182,20 @@ File400_getXml(File400Object *self, PyObject *args, PyObject *keywds)
     PyObject *cls=NULL, *newstr, *fo;
     char decsep = '.';
     static char *kwlist[] = {"fields","labels","decsep","output","tag","cls", NULL};
-    char *fb = (unsigned char *)(*(self->fp->in_buf));
+    char *fb = self->recbuf;
     char *buf, *label;
-    int i, len = 0, size = 4000, output = LIST, tag = 0;
+    int i, retval, len = 0, size = 4000, output = LIST, tag = 0;
 
     if (!PyArg_ParseTupleAndKeywords(args, keywds, "|OOciiO:getXml", kwlist,
                                      &fields, &labels, &decsep, &output, &tag, &cls))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
-    
+
     newstr = PyString_FromStringAndSize(NULL, size);
     buf = PyString_AsString(newstr);
     /* one value */
-    if (PyInt_Check(fields) || PyString_Check(fields)) {
+    if (PyInt_Check(fields) || PyString_Check(fields) || PyUnicode_Check(fields)) {
         int pos = f_getFieldPos(self, fields);
         if (pos < 0) {
             PyErr_SetString(file400Error, "Parameter not valid.");
@@ -1938,15 +2205,15 @@ File400_getXml(File400Object *self, PyObject *args, PyObject *keywds)
                 label = PyString_AsString(labels);
             else
                 label = self->fieldArr[pos].name;
-            if (self->fieldArr[pos].len > size - len - strlen(label) - 100) {
-                size += self->fieldArr[pos].len;
+            if (self->fieldArr[pos].len * 2 > size - len - 100) {
+                size = len + self->fieldArr[pos].len * 2 + 100;
                 _PyString_Resize(&newstr, size);
+                buf = PyString_AsString(newstr);
             }
-            len += f_addToXml(buf + len, label, fb + self->fieldArr[pos].offset,
-                              self->fieldArr[pos].type, 
-                              self->fieldArr[pos].len,
-                              self->fieldArr[pos].digits,
-                              self->fieldArr[pos].dec, decsep, output);
+            retval = f_addToXml(buf + len, label, fb, &self->fieldArr[pos],
+                              decsep, output, self->strconv);
+            if (retval == -1) return NULL;
+            len += retval;
         }
     } else {
         if (tag) {
@@ -1969,7 +2236,7 @@ File400_getXml(File400Object *self, PyObject *args, PyObject *keywds)
             } else if (output == DICT)
                 len += strlen(strcpy(buf + len, "<rec t=\"D\">"));
         }
-        /* if none, return all fields*/ 
+        /* if none, return all fields*/
         if (fields == NULL || fields == Py_None) {
             for (i = 0; i < self->fieldCount; i++) {
                 /* get label*/
@@ -1977,15 +2244,15 @@ File400_getXml(File400Object *self, PyObject *args, PyObject *keywds)
                     label = PyString_AsString(PyTuple_GetItem(labels, i));
                 } else
                     label = self->fieldArr[i].name;
-                if (self->fieldArr[i].len > size - len - strlen(label) - 100) {
-                    size += self->fieldArr[i].len;
+                if (self->fieldArr[i].len * 2 > size - len - 100) {
+                    size = len + self->fieldArr[i].len * 2 + 100;
                     _PyString_Resize(&newstr, size);
+                    buf = PyString_AsString(newstr);
                 }
-                len += f_addToXml(buf + len, label, fb + self->fieldArr[i].offset,
-                                  self->fieldArr[i].type, 
-                                  self->fieldArr[i].len,
-                                  self->fieldArr[i].digits,
-                                  self->fieldArr[i].dec, decsep, output);
+                retval = f_addToXml(buf + len, label, fb, &self->fieldArr[i],
+                                  decsep, output, self->strconv);
+                if (retval == -1) return NULL;
+                len += retval;
             }
         }
         /* if tuple get specified fields */
@@ -1997,27 +2264,27 @@ File400_getXml(File400Object *self, PyObject *args, PyObject *keywds)
                 Py_DECREF(fo);
                 if (pos < 0 ) {
                     PyErr_SetString(file400Error, "Field not valid.");
-                    return NULL;        
+                    return NULL;
                 } else {
                     /* get label*/
                     if (PyTuple_Check(labels) && PyTuple_Size(labels) > i) {
                         label = PyString_AsString(PyTuple_GetItem(labels, i));
                     } else
                         label = self->fieldArr[pos].name;
-                    if (self->fieldArr[pos].len > size - len - strlen(label) - 100) {
-                        size += self->fieldArr[pos].len;
+                    if (self->fieldArr[pos].len * 2 > size - len - 100) {
+                        size = len + self->fieldArr[pos].len * 2 + 100;
                         _PyString_Resize(&newstr, size);
+                        buf = PyString_AsString(newstr);
                     }
-                    len += f_addToXml(buf + len, label, fb + self->fieldArr[pos].offset,
-                                      self->fieldArr[pos].type, 
-                                      self->fieldArr[pos].len,
-                                      self->fieldArr[pos].digits,
-                                      self->fieldArr[pos].dec, decsep, output);
+                    retval = f_addToXml(buf + len, label, fb, &self->fieldArr[pos],
+                                      decsep, output, self->strconv);
+                    if (retval == -1) return NULL;
+                    len += retval;
                 }
             }
         } else {
             PyErr_SetString(file400Error, "Fields not valid.");
-            return NULL;        
+            return NULL;
         }
         if (tag)
             len += strlen(strcpy(buf + len, "</rec>"));
@@ -2074,7 +2341,9 @@ File400_recordSize(File400Object *self, PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ":recordSize"))
         return NULL;
-    return PyInt_FromLong(self->recLen); 
+    if (!f_initialize(self))
+        return NULL;
+    return PyInt_FromLong(self->recLen);
 }
 
 static char fileName_doc[] =
@@ -2087,7 +2356,7 @@ File400_fileName(File400Object *self, PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ":fileName"))
         return NULL;
-    return PyString_FromString(self->file); 
+    return PyString_FromString(self->name);
 }
 
 static char libName_doc[] =
@@ -2100,7 +2369,9 @@ File400_libName(File400Object *self, PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ":libName"))
         return NULL;
-    return PyString_FromString(self->retLib); 
+    if (!f_initialize(self))
+        return NULL;
+    return PyString_FromString(self->retLib);
 }
 
 static char mbrName_doc[] =
@@ -2113,7 +2384,9 @@ File400_mbrName(File400Object *self, PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ":mbrName"))
         return NULL;
-    return PyString_FromString(self->mbr); 
+    if (!f_initialize(self))
+        return NULL;
+    return PyString_FromString(self->mbr);
 }
 
 static char mbrList_doc[] =
@@ -2127,31 +2400,41 @@ File400_mbrList(File400Object *self, PyObject *args)
 {
     PyObject *mbrs;
     Qus_EC_t error;
-    Qus_Generic_Header_0300_t *ushdr;
+    Qus_Generic_Header_0300_t * __ptr128 ushdr;
+#pragma convert(37)
     char usname[] = "MBRLIST   QTEMP     ";
+#pragma convert(0)
     char file[21], mbr[11], desc[50];
-    char *pus, *pmbr = NULL;
+    char * __ptr128 pus, *pmbr = NULL;
     int i;
 
     if (!PyArg_ParseTuple(args, "|s:mbrList", &pmbr))
-        return NULL;        
+        return NULL;
+    if (!f_initialize(self))
+        return NULL;
     if (pmbr != NULL)
-        strtostr400(mbr, pmbr, 10);
+        utfToStrLen(pmbr, mbr, 10, 1);
     else
+#pragma convert(37)
         strcpy(mbr, "*ALL      ");
-    strtostr400(file, self->file, 10);
-    strtostr400((file + 10), self->lib, 10);
-    memset(desc, ' ', 50); 
+#pragma convert(0)
+    utfToStrLen(self->name, file, 10, 0);
+    utfToStrLen(self->lib, (file + 10), 10, 1);
     /* run quslmbr */
     error.Bytes_Provided = sizeof(error);
+#pragma convert(37)
+    memset(desc, ' ', 50);
     QUSCRTUS(usname,"          ", 1, " ", "*USE      ", desc,
              "*YES      ", &error);
+#pragma convert(0)
     if (error.Bytes_Available > 0) {
         PyErr_SetString(file400Error, "Error when creating userspace.");
         return NULL;
     }
     Py_BEGIN_ALLOW_THREADS
+#pragma convert(37)
     QUSLMBR(usname, "MBRL0100  ", file, mbr, "0", &error);
+#pragma convert(0)
     Py_END_ALLOW_THREADS
     if (error.Bytes_Available > 0) {
         PyErr_SetString(file400Error, "Error getting memberlist.");
@@ -2159,12 +2442,13 @@ File400_mbrList(File400Object *self, PyObject *args)
     }
     QUSPTRUS(usname, &ushdr);
     mbrs = PyTuple_New(ushdr->Number_List_Entries);
-    if (!mbrs) 
+    if (!mbrs)
         return NULL;
-    pus = (char *)ushdr;
+    pus = (char * __ptr128)ushdr;
     pus += ushdr->Offset_List_Data;
-    for (i = 0; i < ushdr->Number_List_Entries; i++) {      
-        PyTuple_SetItem(mbrs, i, PyString_FromString(str400tostr(mbr, pus, 10)));
+    for (i = 0; i < ushdr->Number_List_Entries; i++) {
+        memcpy(mbr, pus, 10);
+        PyTuple_SetItem(mbrs, i, strLenToUtfPy(mbr, 10));
         pus += ushdr->Size_Each_Entry;
     }
     QUSDLTUS(usname, &error);
@@ -2180,6 +2464,8 @@ static PyObject *
 File400_fieldCount(File400Object *self, PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ":fieldCount"))
+        return NULL;
+    if (!f_initialize(self))
         return NULL;
     return PyInt_FromLong(self->fieldCount);
 }
@@ -2197,12 +2483,14 @@ File400_fieldDesc(File400Object *self, PyObject *args)
     PyObject *name;
     if (!PyArg_ParseTuple(args, "O:fieldDesc", &name))
         return NULL;
+    if (!f_initialize(self))
+        return NULL;
     pos = f_getFieldPos(self, name);
     if (pos == -1) {
         Py_INCREF(Py_None);
         return Py_None;
     } else
-        return PyString_FromString(self->fieldArr[pos].desc); 
+        return PyString_FromString(self->fieldArr[pos].desc);
 }
 
 static char fieldSize_doc[] =
@@ -2217,6 +2505,8 @@ File400_fieldSize(File400Object *self, PyObject *args)
     int pos;
     PyObject *name;
     if (!PyArg_ParseTuple(args, "O:fieldSize", &name))
+        return NULL;
+    if (!f_initialize(self))
         return NULL;
     pos = f_getFieldPos(self, name);
     if (pos == -1) {
@@ -2239,6 +2529,8 @@ File400_fieldType(File400Object *self, PyObject *args)
     PyObject *name;
     char *type;
     if (!PyArg_ParseTuple(args, "O:fieldType", &name))
+        return NULL;
+    if (!f_initialize(self))
         return NULL;
     pos = f_getFieldPos(self, name);
     if (pos == -1) {
@@ -2281,7 +2573,7 @@ File400_fieldType(File400Object *self, PyObject *args)
         else if (itype == 0x802c)
             type = "LINKCHAR";
         else if (itype == 0x802e)
-            type = "LINKOPEN";          
+            type = "LINKOPEN";
         else type = "UNKNOWN";
         return PyString_FromString(type);
     }
@@ -2291,7 +2583,7 @@ static char fieldList_doc[] =
 "f.fieldList([full=0]) -> Tuple.\n\
 \n\
 If full is False, returns a tuple of field names,\n\
-else returns tuples with name, desc, type, size, digits, decimals.";
+else returns tuples with name, desc, type, size, digits, decimals, ccsid, alwnull, default.";
 
 static PyObject *
 File400_fieldList(File400Object *self, PyObject *args)
@@ -2301,21 +2593,23 @@ File400_fieldList(File400Object *self, PyObject *args)
     fieldInfoStruct fi;
 
     if (!PyArg_ParseTuple(args, "|i:fieldList", &full))
-        return NULL;        
+        return NULL;
+    if (!f_initialize(self))
+        return NULL;
     fld = PyTuple_New(self->fieldCount);
-    if (!fld) 
+    if (!fld)
         return NULL;
     for (i = 0; i < self->fieldCount; i++) {
         if (full) {
             fi = self->fieldArr[i];
             fargs = Py_BuildValue("(i)", i);
             ftype = File400_fieldType(self, fargs);
-            PyTuple_SetItem(fld, i, Py_BuildValue("ssOiii", fi.name, fi.desc,
-                            ftype, fi.len, fi.digits, fi.dec));
+            PyTuple_SetItem(fld, i, Py_BuildValue("ssOiiiiiO", fi.name, fi.desc,
+                            ftype, fi.len, fi.digits, fi.dec, fi.ccsid, fi.alwnull, fi.dft));
             Py_DECREF(fargs);
             Py_XDECREF(ftype);
         } else
-            PyTuple_SetItem(fld, i, PyString_FromString(self->fieldArr[i].name)); 
+            PyTuple_SetItem(fld, i, PyString_FromString(self->fieldArr[i].name));
     }
     return fld;
 }
@@ -2329,6 +2623,8 @@ static PyObject *
 File400_keyCount(File400Object *self, PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ":keyCount"))
+        return NULL;
+    if (!f_initialize(self))
         return NULL;
     return PyInt_FromLong(self->keyCount);
 }
@@ -2345,12 +2641,14 @@ File400_keyList(File400Object *self, PyObject *args)
     int i;
 
     if (!PyArg_ParseTuple(args, ":keyList"))
-        return NULL;        
+        return NULL;
+    if (!f_initialize(self))
+        return NULL;
     key = PyTuple_New(self->keyCount);
-    if (!key) 
+    if (!key)
         return NULL;
     for (i = 0; i < self->keyCount; i++) {
-        PyTuple_SetItem(key, i, PyString_FromString(self->keyArr[i].name)); 
+        PyTuple_SetItem(key, i, PyString_FromString(self->keyArr[i].name));
     }
     return key;
 }
@@ -2368,6 +2666,8 @@ File400_getRecord(File400Object *self, PyObject *args)
 
     if (!PyArg_ParseTuple(args, ":getRecord"))
         return NULL;
+    if (!f_initialize(self))
+        return NULL;
     newrec = (Record400Object *) PyObject_MALLOC(sizeof(Record400Object) + self->recLen);
     if (newrec == NULL)
         return PyErr_NoMemory();
@@ -2377,7 +2677,7 @@ File400_getRecord(File400Object *self, PyObject *args)
     memcpy(newrec->recId, self->recId, sizeof(self->recId));
     if (self->fp) {
         newrec->rrn = self->fp->riofb.rrn;
-        memcpy(newrec->buffer, (char *)(*(self->fp->in_buf)), self->recLen);
+        memcpy(newrec->buffer, self->recbuf, self->recLen);
     } else {
         newrec->rrn = -1;
         f_clear(self, newrec->buffer);
@@ -2389,6 +2689,7 @@ static char getBuffer_doc[] =
 "f.getBuffer() -> String.\n\
 \n\
 Get the raw value of buffer as a String.\n\
+The data is presented in the ccsid of the field or file.\n\
 Same as getBuffer() for the record.";
 
 static PyObject *
@@ -2396,9 +2697,9 @@ File400_getBuffer(File400Object *self, PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ":getBuffer"))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
-    return PyString_FromStringAndSize((char *)(*(self->fp->in_buf)), self->recLen);
+    return PyString_FromStringAndSize(self->recbuf, self->recLen);
 }
 
 static char set_doc[] =
@@ -2414,14 +2715,22 @@ File400_set(File400Object *self, PyObject *args)
     PyObject *k, *o;
     int i, pos;
 
-    if (!PyArg_ParseTuple(args, "OO:set", &k, &o))
+    if (!PyArg_ParseTuple(args, "O|O:set", &k, &o))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     /* if dict update fields in dict with values */
-    if (PyDict_Check(o)) {
-        PyErr_SetString(file400Error, "Not yet supported.");
-        return NULL;
+    if (PyDict_Check(k)) {
+        PyObject *key, *value;
+        Py_ssize_t dpos = 0;
+        while (PyDict_Next(k, &dpos, &key, &value)) {
+            pos = f_getFieldPos(self, key);
+            if (pos >= 0) {
+                i = f_setFieldValue(self, pos, value, self->recbuf);
+                if (i)
+                    return NULL;
+            }
+        }
     }
     /* one value */
     else {
@@ -2429,16 +2738,13 @@ File400_set(File400Object *self, PyObject *args)
         if (pos < 0) {
             PyErr_SetString(file400Error, "Parameter not valid.");
             return NULL;
-        } 
+        }
         else {
-            if (self->omode == F4_OWRITE)
-                i = f_setFieldValue(self, pos, o, (char *)(*(self->fp->out_buf)));
-            else
-                i = f_setFieldValue(self, pos, o, (char *)(*(self->fp->in_buf)));
+            i = f_setFieldValue(self, pos, o, self->recbuf);
         }
         if (i)
             return NULL;
-    } 
+    }
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -2454,9 +2760,9 @@ File400_setKey(File400Object *self, PyObject *args)
     PyObject *k, *v;
     int i, len;
 
-    if (!PyArg_ParseTuple(args, "O:set", &k))
+    if (!PyArg_ParseTuple(args, "O:setKey", &k))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     if (!PyTuple_Check(k) && !PyList_Check(k)) {
         PyErr_SetString(file400Error, "Key must be a tuple or list with values.");
@@ -2492,8 +2798,8 @@ File400_setRecord(File400Object *self, PyObject *args)
     Record400Object *o;
 
     if (!PyArg_ParseTuple(args, "O:setRecord", &o))
-        return NULL;    
-    if (!f_isOpen(self)) 
+        return NULL;
+    if (!f_isOpen(self))
         return NULL;
     if (!Record400Object_Check(o)) {
         PyErr_SetString(file400Error, "This is not a record object.");
@@ -2503,10 +2809,7 @@ File400_setRecord(File400Object *self, PyObject *args)
         PyErr_SetString(file400Error, "Record format check failed.");
         return NULL;
     }
-    if (self->omode == F4_OWRITE)
-        memcpy(((char *)(*(self->fp->out_buf))), o->buffer, self->recLen);
-    else    
-        memcpy(((char *)(*(self->fp->in_buf))), o->buffer, self->recLen);
+    memcpy(self->recbuf, o->buffer, self->recLen);
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -2525,16 +2828,12 @@ File400_setBuffer(File400Object *self, PyObject *args)
 
     if (!PyArg_ParseTuple(args, "S:setBuffer", &o))
         return NULL;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
-    if (self->omode == F4_OWRITE)
-        buf = (char *)(*(self->fp->out_buf));
-    else
-        buf = (char *)(*(self->fp->in_buf));
     if (self->recLen > o->ob_size)
-        memcpy(buf, o->ob_sval, o->ob_size);
+        memcpy(self->recbuf, o->ob_sval, o->ob_size);
     else
-        memcpy(buf, o->ob_sval, self->recLen);
+        memcpy(self->recbuf, o->ob_sval, self->recLen);
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -2549,7 +2848,7 @@ static int
 File400_ass_subscript(File400Object *self, PyObject *v, PyObject *w)
 {
     int pos;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return -1;
     if (w == NULL) {
         PyErr_SetString(file400Error, "NULL value not supported.");
@@ -2559,12 +2858,8 @@ File400_ass_subscript(File400Object *self, PyObject *v, PyObject *w)
         if (pos < 0) {
             PyErr_SetString(file400Error, "Field not found.");
             return -1;
-        } else {
-            if (self->omode == F4_OWRITE)
-                return f_setFieldValue(self, pos, w, (char *)(*(self->fp->out_buf)));
-            else
-                return f_setFieldValue(self, pos, w, (char *)(*(self->fp->in_buf)));
-        }
+        } else
+            return f_setFieldValue(self, pos, w, self->recbuf);
     }
 }
 
@@ -2572,14 +2867,25 @@ static PyObject *
 File400_subscript(File400Object *self, PyObject *v)
 {
     int pos;
-    if (!f_isOpen(self)) 
+    if (!f_isOpen(self))
         return NULL;
     pos = f_getFieldPos(self, v);
     if (pos < 0) {
         PyErr_SetString(file400Error, "Parameter not valid.");
         return NULL;
     } else
-        return f_getFieldValue(self, pos, (unsigned char *)(*(self->fp->in_buf)));
+        return f_getFieldValue(self, pos, self->recbuf);
+}
+
+static PyObject *
+File400_iternext(File400Object *self)
+{
+    PyObject *res;
+    res = File400_readn(self, Py_BuildValue("()"));
+    if (res == NULL || PyInt_AS_LONG(res) == 1)
+        return NULL;
+    Py_INCREF(self);
+    return (PyObject *)self;
 }
 
 static PyMappingMethods File400_as_mapping = {
@@ -2588,21 +2894,43 @@ static PyMappingMethods File400_as_mapping = {
     (objobjargproc)File400_ass_subscript, /*mp_ass_subscript*/
 };
 
+PyDoc_STRVAR(exit_doc,
+	     "__exit__(*excinfo) -> None.  release lock.");
+
+static PyObject *
+File400_exit(File400Object *self, PyObject *args)
+{
+    if (!f_isOpen(self))
+        return NULL;
+    _Rrlslck(self->fp);
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+PyDoc_STRVAR(enter_doc,
+	     "__enter__() -> self.");
+
+static PyObject *
+File400_self(File400Object *self)
+{
+	Py_INCREF(self);
+	return (PyObject *)self;
+}
+
 static PyMethodDef File400Object_methods[] = {
     {"open",    (PyCFunction)File400_open,  METH_VARARGS|METH_KEYWORDS, open_doc},
     {"close",   (PyCFunction)File400_close, METH_VARARGS,close_doc},
     {"readn",   (PyCFunction)File400_readn, METH_VARARGS, readn_doc},
     {"readp",   (PyCFunction)File400_readp, METH_VARARGS, readp_doc},
     {"readrrn",  (PyCFunction)File400_readrrn,METH_VARARGS, readrrn_doc},
-    {"readeq",  (PyCFunction)File400_readeq,METH_VARARGS, readeq_doc},
+    {"readeq",  (PyCFunction)File400_readeq,METH_VARARGS|METH_KEYWORDS, readeq_doc},
     {"readne",  (PyCFunction)File400_readne,METH_VARARGS, readne_doc},
     {"readpe",  (PyCFunction)File400_readpe,METH_VARARGS, readpe_doc},
-    {"readf",   (PyCFunction)File400_readf, METH_VARARGS, readf_doc},
-    {"readl",   (PyCFunction)File400_readl, METH_VARARGS, readl_doc},
-    {"posa",   (PyCFunction)File400_posa,   METH_VARARGS, posa_doc},
-    {"posb",   (PyCFunction)File400_posb,   METH_VARARGS, posb_doc},
-    {"posf",    (PyCFunction)File400_posf,  METH_VARARGS, posf_doc},
-    {"posl",    (PyCFunction)File400_posl,  METH_VARARGS, posl_doc},
+    {"readf",   (PyCFunction)File400_readf, METH_VARARGS|METH_KEYWORDS, readf_doc},
+    {"readl",   (PyCFunction)File400_readl, METH_VARARGS|METH_KEYWORDS, readl_doc},
+    {"posa",   (PyCFunction)File400_posa,   METH_VARARGS|METH_KEYWORDS, posa_doc},
+    {"posb",   (PyCFunction)File400_posb,   METH_VARARGS|METH_KEYWORDS, posb_doc},
+    {"posf",    (PyCFunction)File400_posf,  METH_VARARGS|METH_KEYWORDS, posf_doc},
+    {"posl",    (PyCFunction)File400_posl,  METH_VARARGS|METH_KEYWORDS, posl_doc},
     {"undelete",  (PyCFunction)File400_undelete,METH_VARARGS, undelete_doc},
     {"write",   (PyCFunction)File400_write, METH_VARARGS, write_doc},
     {"delete",  (PyCFunction)File400_delete,METH_VARARGS, delete_doc},
@@ -2634,68 +2962,72 @@ static PyMethodDef File400Object_methods[] = {
     {"setKey",  (PyCFunction)File400_setKey, METH_VARARGS, setKey_doc},
     {"setRecord",(PyCFunction)File400_setRecord, METH_VARARGS, setRecord_doc},
     {"setBuffer",(PyCFunction)File400_setBuffer, METH_VARARGS, setBuffer_doc},
+    {"__exit__", (PyCFunction)File400_exit,METH_VARARGS, exit_doc},
+	{"__enter__", (PyCFunction)File400_self,METH_NOARGS, enter_doc},
     {NULL,      NULL}       /* sentinel */
 };
 
 static PyObject *
 File400_str(File400Object *self)
 {
-    return PyString_FromString(self->file); 
+    return PyString_FromString(self->name);
 }
 
 static PyObject *
-File400_getattr(File400Object *self, char *name)
+File400_getattro(File400Object *self, PyObject *nameobj)
 {
-    PyObject *fieldName, *retval;
-    if (*name == '_' && *(name + 1) != '_') {       
-        fieldName = PyString_FromString(name + 1);
-        retval = File400_subscript(self, fieldName);
-        Py_DECREF(fieldName);
-        return retval;
-    } else
-        return Py_FindMethod(File400Object_methods, (PyObject *)self, name);
+    char *name;
+    if (PyString_Check(nameobj)) {
+        name = PyString_AS_STRING(nameobj);
+        if (*name == '_' && *(name + 1) != '_')
+            return File400_subscript(self, nameobj);
+    }
+    return PyObject_GenericGetAttr((PyObject *)self, nameobj);
 }
 
 static int
-File400_setattr(File400Object *self, char *name, PyObject *v)
+File400_setattro(File400Object *self, PyObject *nameobj, PyObject *v)
 {
-    PyObject *fieldName;
-    int retval;
-    if (*name == '_') {
-        fieldName = PyString_FromString(name + 1);
-        retval = File400_ass_subscript(self, fieldName, v);
-        Py_DECREF(fieldName);
-        return retval;
-    } else
-        return -1;
+    char *name;
+    if (PyString_Check(nameobj)) {
+        name = PyString_AS_STRING(nameobj);
+        if (*name == '_')
+            return File400_ass_subscript(self, nameobj, v);
+    }
+    return -1;
 }
-
-PyTypeObject File400_Type = {
-    /* The ob_type field must be initialized in the module init function
-     * to be portable to Windows without using C++. */
-    PyObject_HEAD_INIT(NULL)
-    0,          /*ob_size*/
-    "File400",          /*tp_name*/
-    sizeof(File400Object),  /*tp_basicsize*/
-    0,          /*tp_itemsize*/
-    /* methods */
-    (destructor)File400_dealloc, /*tp_dealloc*/
-    0,          /*tp_print*/
-    (getattrfunc)File400_getattr,/*tp_getattr*/
-    (setattrfunc)File400_setattr,/*tp_setattr*/
-    0,          /*tp_compare*/
-    0,          /*tp_repr*/
-    0,          /*tp_as_number*/
-    0,          /*tp_as_sequence*/
-    &File400_as_mapping,    /*tp_as_mapping*/
-    0,          /*tp_hash*/
-    0,          /*tp_call*/
-   (reprfunc)File400_str,   /*tp_str*/
-};
 
 /* --------------------------------------------------------------------- */
 
 /* Record400 methods */
+
+static char Record400_doc[] =
+"Record400(filename[lib]).\n\
+\n\
+Create a Record object from a file.\n\
+If file is not open the record is cleared.";
+
+static PyObject *
+Record400_new(PyTypeObject *type, PyObject *args, PyObject *keywds)
+{
+    char *file;
+    char *lib = NULL;
+    static char *kwlist[] = {"file", "lib", NULL};
+    PyObject *fobj, *dict;
+
+    if (!PyArg_ParseTupleAndKeywords(args, keywds, "s|s:Record400", kwlist, &file, &lib))
+        return NULL;
+    if (lib != NULL) {
+        dict = PyDict_New();
+        PyDict_SetItemString(dict, "lib", PyString_FromString(lib));
+    }
+    fobj = File400_new(&File400_Type, Py_BuildValue("(s)", file), dict);
+    Py_XDECREF(dict);
+    if (fobj == NULL)
+        return NULL;
+    return File400_getRecord((File400Object *)fobj, Py_BuildValue("()"));
+}
+
 static void
 Record400_dealloc(Record400Object *self)
 {
@@ -2712,11 +3044,11 @@ static PyObject *
 Record400_getFile(Record400Object *self, PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ":getFile"))
-        return NULL;        
+        return NULL;
     if (self->file == NULL) {
         PyErr_SetString(file400Error, "No file for this record.");
         return NULL;
-    }       
+    }
     Py_INCREF(self->file);
     return (PyObject *)self->file;
 }
@@ -2734,11 +3066,11 @@ Record400_refresh(Record400Object *self, PyObject *args)
     if (self->file == NULL) {
         PyErr_SetString(file400Error, "No file for this record.");
         return NULL;
-    }       
+    }
     if (!f_isOpen(self->file))
         return NULL;
     self->rrn = self->file->fp->riofb.rrn;
-    memcpy(self->buffer, (char *)(*(self->file->fp->in_buf)), self->file->recLen);
+    memcpy(self->buffer, self->file->recbuf, self->file->recLen);
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -2750,7 +3082,7 @@ Get information from the buffer.\n\
 f.get() - Get list of all values.\n\
 f.get('cusno') - Value of the field cusno. Same as f['cusno']\n\
 f.get(0) - Value of the first field. Same as f[0]\n\
-f.get(('cusno','name')) - Returns list of values.\n\  
+f.get(('cusno','name')) - Returns list of values.\n\
 f.get((0,1)) - Returns list of values.\n\
 output can have the following values:\n\
  0 - output as a list(default)\n\
@@ -2763,7 +3095,7 @@ if output is dictionary.";
 static PyObject *
 Record400_get(Record400Object *self, PyObject *args, PyObject *keywds)
 {
-    PyObject *o = Py_None, *labels = Py_None, *cls = Py_None, 
+    PyObject *o = Py_None, *labels = Py_None, *cls = Py_None,
         *fo, *va, *obj, *dict;
     int i, pos, len, output = LIST;
     static char *kwlist[] = {"fields","output","cls","labels", NULL};
@@ -2773,19 +3105,21 @@ Record400_get(Record400Object *self, PyObject *args, PyObject *keywds)
     if (self->file == NULL) {
         PyErr_SetString(file400Error, "No file for this record.");
         return NULL;
-    }       
+    }
     if (!cls || cls == Py_None)
-        cls = dummyClass;       
-    else if (!PyClass_Check(cls) && !PyType_Check(cls)) { 
+        cls = dummyClass;
+    else if (!PyClass_Check(cls) && !PyType_Check(cls)) {
         PyErr_SetString(file400Error, "cls not a vlid type.");
         return NULL;
     }
-    /* if none, return all fields*/ 
+    /* if none, return all fields*/
     if (o == NULL || o == Py_None) {
         if (output == LIST) {
             obj = PyList_New(self->file->fieldCount);
             for (i = 0; i < self->file->fieldCount; i++) {
-                PyList_SetItem(obj, i, f_getFieldValue(self->file, i, self->buffer)); 
+                va = f_getFieldValue(self->file, i, self->buffer);
+                if (va == NULL) return NULL;
+                PyList_SetItem(obj, i, va);
             }
         } else {
             char *label;
@@ -2808,14 +3142,16 @@ Record400_get(Record400Object *self, PyObject *args, PyObject *keywds)
                     label = PyString_AsString(PyTuple_GetItem(labels, i));
                 } else
                     label = self->file->fieldArr[i].name;
-                PyDict_SetItemString(dict, label,
-                  f_getFieldValue(self->file, i, self->buffer)); 
+                va = f_getFieldValue(self->file, i, self->buffer);
+                if (va == NULL) return NULL;
+                PyDict_SetItemString(dict, label, va);
+                Py_DECREF(va);
             }
         }
         return obj;
     }
     /* one value */
-    else if (PyInt_Check(o) || PyString_Check(o)) {
+    else if (PyInt_Check(o) || PyString_Check(o) || PyUnicode_Check(o)) {
         pos = f_getFieldPos(self->file, o);
         if (pos < 0) {
             PyErr_SetString(file400Error, "Parameter not valid.");
@@ -2854,30 +3190,32 @@ Record400_get(Record400Object *self, PyObject *args, PyObject *keywds)
                 Py_DECREF(obj);
                 return NULL;
             } else {
-                if (output == LIST)
-                    PyList_SetItem(obj, i, f_getFieldValue(self->file, pos, self->buffer));
-                else {
+                if (output == LIST) {
+                    va = f_getFieldValue(self->file, pos, self->buffer);
+                    if (va == NULL) return NULL;
+                    PyList_SetItem(obj, i, va);
+                } else {
                     if (PyTuple_Check(labels) && PyTuple_Size(labels) > i) {
                         label = PyString_AsString(PyTuple_GetItem(labels, i));
                     } else
                         label = self->file->fieldArr[pos].name;
-                    PyDict_SetItemString(dict, label,
-                       f_getFieldValue(self->file, pos, self->buffer)); 
+                    va = f_getFieldValue(self->file, pos, self->buffer);
+                    if (va == NULL) return NULL;
+                    PyDict_SetItemString(dict, label, va);
+                    Py_DECREF(va);
                 }
             }
         }
         return obj;
-    } 
+    }
 }
 
 static char rec_getString_doc[] =
-"r.get([fields][fieldsep][decsep]) -> String.\n\
+"r.getString([fields][fieldsep][decsep]) -> String.\n\
 \n\
 Get the field values as string seperated by tab.\n\
 r.getString() - All fields.\n\
-r.getString('cusno') - One field.\n\
-r.getString(0) - One field by psoition in record.\n\
-r.getString(('cusno','name')) - List of fields.\n\  
+r.getString(('cusno','name')) - List of fields.\n\
 r.getString((0,1)) - List of fields.\n\
 Default value for fieldsep(field seperator) is tab(\t).\n\
 Default value for decsep(decimal seperator) is .(periode).";
@@ -2889,75 +3227,68 @@ Record400_getString(Record400Object *self, PyObject *args, PyObject *keywds)
     char decsep = '.';
     char fieldsep = '\t';
     static char *kwlist[] = {"fields","fieldsep","decsep", NULL};
+    char *buf;
+    int i, retval, len = 0, size = 4000;
+    PyObject *newstr, *fo;
 
-    if (!PyArg_ParseTupleAndKeywords(args, keywds, "|Occ:getString", kwlist, 
+    if (!PyArg_ParseTupleAndKeywords(args, keywds, "|Occ:getString", kwlist,
                                      &fields, &fieldsep, &decsep))
         return NULL;
     if (self->file == NULL) {
         PyErr_SetString(file400Error, "No file for this record.");
         return NULL;
-    }       
-    /* one value */
-    if (PyInt_Check(fields) || PyString_Check(fields)) {
-        int pos = f_getFieldPos(self->file, fields);
-        if (pos < 0) {
-            PyErr_SetString(file400Error, "Parameter not valid.");
-            return NULL;
-        } else
-            return f_getFieldString(self->file, pos, decsep, self->buffer);
-    } else {
-        char *buf;
-        int i, len = 0, size = 4000;
-        PyObject *newstr, *fo;
-        newstr = PyString_FromStringAndSize(NULL, size);
-        buf = PyString_AsString(newstr);
-        /* if none, return all fields*/ 
-        if (fields == NULL || fields == Py_None) {
-            for (i = 0; i < self->file->fieldCount; i++) {
-                if (self->file->fieldArr[i].len > size - len - 50) {
-                    size += self->file->fieldArr[i].len;
+    }
+
+    newstr = PyString_FromStringAndSize(NULL, size);
+    buf = PyString_AsString(newstr);
+    /* if none, return all fields*/
+    if (fields == NULL || fields == Py_None) {
+        for (i = 0; i < self->file->fieldCount; i++) {
+            if (self->file->fieldArr[i].len * 2 > size - len - 100) {
+                size = len + self->file->fieldArr[i].len * 2 + 100;
+                _PyString_Resize(&newstr, size);
+                buf = PyString_AsString(newstr);
+            }
+            retval = f_addToString(buf + len, self->buffer, &self->file->fieldArr[i],
+                    decsep, self->file->strconv);
+            if (retval == -1)
+                return NULL;
+            len += retval;
+            *(buf + len) = fieldsep;
+            len++;
+        }
+    }
+    /* if tuple get specified fields */
+    else if (PySequence_Check(fields)) {
+        int pos, seqlen = PySequence_Length(fields);
+        for (i = 0; i < seqlen; i++) {
+            fo = PySequence_GetItem(fields, i);
+            pos = f_getFieldPos(self->file, fo);
+            Py_DECREF(fo);
+            if (pos < 0 ) {
+                PyErr_SetString(file400Error, "Field not valid.");
+                return NULL;
+            } else {
+                if (self->file->fieldArr[pos].len * 2 > size - len - 100) {
+                    size = len + self->file->fieldArr[pos].len * 2 + 100;
                     _PyString_Resize(&newstr, size);
+                    buf = PyString_AsString(newstr);
                 }
-                len += f_addToString(buf + len, self->buffer + self->file->fieldArr[i].offset,
-                                    self->file->fieldArr[i].type,
-                                    self->file->fieldArr[i].len,
-                                    self->file->fieldArr[i].digits,
-                                    self->file->fieldArr[i].dec, decsep);
+                retval = f_addToString(buf + len, self->buffer, &self->file->fieldArr[i],
+                        decsep, self->file->strconv);
+                if (retval == -1)
+                    return NULL;
+                len += retval;
                 *(buf + len) = fieldsep;
                 len++;
             }
         }
-        /* if tuple get specified fields */
-        else if (PySequence_Check(fields)) {
-            int pos, seqlen = PySequence_Length(fields);
-            for (i = 0; i < seqlen; i++) {
-                fo = PySequence_GetItem(fields, i);
-                pos = f_getFieldPos(self->file, fo);
-                Py_DECREF(fo);
-                if (pos < 0 ) {
-                    PyErr_SetString(file400Error, "Field not valid.");
-                    return NULL;        
-                } else {
-                    if (self->file->fieldArr[pos].len > size - len - 50) {
-                        size += self->file->fieldArr[pos].len;
-                        _PyString_Resize(&newstr, size);
-                    }
-                    len += f_addToString(buf + len, self->buffer + self->file->fieldArr[pos].offset,
-                                        self->file->fieldArr[pos].type,
-                                        self->file->fieldArr[pos].len,
-                                        self->file->fieldArr[pos].digits,
-                                        self->file->fieldArr[pos].dec, decsep);
-                    *(buf + len) = fieldsep;
-                    len++;
-                }
-            }
-        } else {
-            PyErr_SetString(file400Error, "Field not valid.");
-            return NULL;        
-        }
-        _PyString_Resize(&newstr, len);
-        return newstr;
+    } else {
+        PyErr_SetString(file400Error, "Field not valid.");
+        return NULL;
     }
+    _PyString_Resize(&newstr, len);
+    return newstr;
 }
 
 static char rec_getXml_doc[] =
@@ -2967,7 +3298,7 @@ Get the field values as a xml string from the buffer.\n\
 r.getXml() - All fields.\n\
 r.getXml('cusno') - One field.\n\
 r.getXml(0) - One field by position in record.\n\
-r.getXml(('cusno','name')) - List of fields.\n\  
+r.getXml(('cusno','name')) - List of fields.\n\
 r.getXml((0,1)) - List of fields.\n\
 r.getXml((0,1),('pn','desc')) - Include labels to use.\n\
 Default value for decsep(decimal seperator) is .(periode).\n\
@@ -2987,7 +3318,7 @@ Record400_getXml(Record400Object *self, PyObject *args, PyObject *keywds)
     char decsep = '.';
     static char *kwlist[] = {"fields","labels","decsep","output","tag","cls", NULL};
     char *buf, *label;
-    int i, len = 0, size = 4000, output = LIST, tag = 0;
+    int i, retval, len = 0, size = 4000, output = LIST, tag = 0;
 
     if (!PyArg_ParseTupleAndKeywords(args, keywds, "|OOciiO:getXml", kwlist,
                                      &fields, &labels, &decsep, &output, &tag, &cls))
@@ -2999,7 +3330,7 @@ Record400_getXml(Record400Object *self, PyObject *args, PyObject *keywds)
     newstr = PyString_FromStringAndSize(NULL, size);
     buf = PyString_AsString(newstr);
     /* one value */
-    if (PyInt_Check(fields) || PyString_Check(fields)) {
+    if (PyInt_Check(fields) || PyString_Check(fields) || PyUnicode_Check(fields)) {
         int pos = f_getFieldPos(self->file, fields);
         if (pos < 0) {
             PyErr_SetString(file400Error, "Parameter not valid.");
@@ -3009,16 +3340,15 @@ Record400_getXml(Record400Object *self, PyObject *args, PyObject *keywds)
                 label = PyString_AsString(labels);
             else
                 label = self->file->fieldArr[pos].name;
-            if (self->file->fieldArr[pos].len > size - len - strlen(label) - 100) {
-                size += self->file->fieldArr[pos].len;
+            if (self->file->fieldArr[pos].len * 2 > size - len - 100) {
+                size = len + self->file->fieldArr[pos].len * 2 + 100;
                 _PyString_Resize(&newstr, size);
+                buf = PyString_AsString(newstr);
             }
-            len += f_addToXml(buf + len, label,
-                              self->buffer + self->file->fieldArr[pos].offset,
-                              self->file->fieldArr[pos].type,
-                              self->file->fieldArr[pos].len,
-                              self->file->fieldArr[pos].digits,
-                              self->file->fieldArr[pos].dec, decsep, output);
+            retval = f_addToXml(buf + len, label, self->buffer, &self->file->fieldArr[pos],
+                              decsep, output, self->file->strconv);
+            if (retval == -1) return NULL;
+            len += retval;
         }
     } else {
         if (tag) {
@@ -3041,7 +3371,7 @@ Record400_getXml(Record400Object *self, PyObject *args, PyObject *keywds)
             } else if (output == DICT)
                 len += strlen(strcpy(buf + len, "<rec t=\"D\">"));
         }
-        /* if none, return all fields*/ 
+        /* if none, return all fields*/
         if (fields == NULL || fields == Py_None) {
             for (i = 0; i < self->file->fieldCount; i++) {
                 /* get label*/
@@ -3050,16 +3380,15 @@ Record400_getXml(Record400Object *self, PyObject *args, PyObject *keywds)
                     label = PyString_AsString(PyTuple_GetItem(labels, i));
                 } else
                     label = self->file->fieldArr[i].name;
-                if (self->file->fieldArr[i].len > size - len - strlen(label) - 100) {
-                    size += self->file->fieldArr[i].len;
+                if (self->file->fieldArr[i].len * 2 > size - len - 100) {
+                    size = len + self->file->fieldArr[i].len * 2 + 100;
                     _PyString_Resize(&newstr, size);
+                    buf = PyString_AsString(newstr);
                 }
-                len += f_addToXml(buf + len, label,
-                                  self->buffer + self->file->fieldArr[i].offset,
-                                  self->file->fieldArr[i].type,
-                                  self->file->fieldArr[i].len,
-                                  self->file->fieldArr[i].digits,
-                                  self->file->fieldArr[i].dec, decsep, output);
+                retval = f_addToXml(buf + len, label, self->buffer, &self->file->fieldArr[i],
+                                  decsep, output, self->file->strconv);
+                if (retval == -1) return NULL;
+                len += retval;
             }
         }
         /* if tuple get specified fields */
@@ -3078,21 +3407,20 @@ Record400_getXml(Record400Object *self, PyObject *args, PyObject *keywds)
                         label = PyString_AsString(PyTuple_GetItem(labels, i));
                     } else
                         label = self->file->fieldArr[pos].name;
-                    if (self->file->fieldArr[pos].len > size - len - strlen(label) - 100) {
-                        size += self->file->fieldArr[pos].len;
+                    if (self->file->fieldArr[pos].len * 2 > size - len - 100) {
+                        size = len + self->file->fieldArr[pos].len * 2 + 100;
                         _PyString_Resize(&newstr, size);
+                        buf = PyString_AsString(newstr);
                     }
-                    len += f_addToXml(buf + len, label,
-                                      self->buffer + self->file->fieldArr[pos].offset,
-                                      self->file->fieldArr[pos].type, 
-                                      self->file->fieldArr[pos].len,
-                                      self->file->fieldArr[pos].digits,
-                                      self->file->fieldArr[pos].dec, decsep, output);
+                    retval = f_addToXml(buf + len, label, self->buffer,
+                        &self->file->fieldArr[pos], decsep, output, self->file->strconv);
+                    if (retval == -1) return NULL;
+                    len += retval;
                 }
             }
         } else {
             PyErr_SetString(file400Error, "Field not valid.");
-            return NULL;        
+            return NULL;
         }
         if (tag)
             len += strlen(strcpy(buf + len, "</rec>"));
@@ -3110,7 +3438,7 @@ static PyObject *
 Record400_getRrn(Record400Object *self, PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ":getRrn"))
-        return NULL;        
+        return NULL;
     return PyInt_FromLong(self->rrn);
 }
 
@@ -3127,16 +3455,24 @@ Record400_set(Record400Object *self, PyObject *args)
     PyObject *k, *o;
     int i, pos;
 
-    if (!PyArg_ParseTuple(args, "OO:set", &k, &o))
+    if (!PyArg_ParseTuple(args, "O|O:set", &k, &o))
         return NULL;
     if (self->file == NULL) {
         PyErr_SetString(file400Error, "No file for this record.");
         return NULL;
-    }       
+    }
     /* if dict update fields in dict with values */
-    if (PyDict_Check(o)) {
-        PyErr_SetString(file400Error, "Not yet supported.");
-        return NULL;
+    if (PyDict_Check(k)) {
+        PyObject *key, *value;
+        Py_ssize_t dpos = 0;
+        while (PyDict_Next(k, &dpos, &key, &value)) {
+            pos = f_getFieldPos(self->file, key);
+            if (pos >= 0) {
+                i = f_setFieldValue(self->file, pos, value, self->buffer);
+                if (i)
+                    return NULL;
+            }
+        }
     }
     /* one value */
     else {
@@ -3144,10 +3480,10 @@ Record400_set(Record400Object *self, PyObject *args)
         if (pos < 0) {
             PyErr_SetString(file400Error, "Parameter not valid.");
             return NULL;
-        } 
+        }
         else if (f_setFieldValue(self->file, pos, o, self->buffer))
             return NULL;
-    } 
+    }
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -3155,7 +3491,8 @@ Record400_set(Record400Object *self, PyObject *args)
 static char rec_getBuffer_doc[] =
 "r.getBuffer() -> String.\n\
 \n\
-Get the raw value of buffer as a String.";
+Get the raw value of buffer as a String.\n\
+The data is presented in the ccsid of the field or file.";
 
 static PyObject *
 Record400_getBuffer(Record400Object *self, PyObject *args)
@@ -3165,7 +3502,7 @@ Record400_getBuffer(Record400Object *self, PyObject *args)
     if (self->file == NULL) {
         PyErr_SetString(file400Error, "No file for this record.");
         return NULL;
-    }       
+    }
     return PyString_FromStringAndSize(self->buffer, self->file->recLen);
     Py_INCREF(Py_None);
     return Py_None;
@@ -3188,13 +3525,13 @@ Record400_setBuffer(Record400Object *self, PyObject *args)
     if (self->file == NULL) {
         PyErr_SetString(file400Error, "No file for this record.");
         return NULL;
-    }       
+    }
     if (PyString_Check(o)) {
         if (self->file->recLen > ((PyStringObject *)o)->ob_size)
-            memcpy(self->buffer, ((PyStringObject *)o)->ob_sval, 
+            memcpy(self->buffer, ((PyStringObject *)o)->ob_sval,
                    ((PyStringObject *)o)->ob_size);
         else
-            memcpy(self->buffer, ((PyStringObject *)o)->ob_sval, 
+            memcpy(self->buffer, ((PyStringObject *)o)->ob_sval,
                    self->file->recLen);
     }
     Py_INCREF(Py_None);
@@ -3217,7 +3554,7 @@ Record400_clear(Record400Object *self, PyObject *args)
     if (self->file == NULL) {
         PyErr_SetString(file400Error, "No file for this record.");
         return NULL;
-    }       
+    }
     f_clear(self->file, self->buffer);
     Py_INCREF(Py_None);
     return Py_None;
@@ -3229,7 +3566,7 @@ Record400_length(Record400Object *self)
     if (self->file == NULL) {
         PyErr_SetString(file400Error, "No file for this record.");
         return -1;
-    }       
+    }
     return self->file->fieldCount;
 }
 
@@ -3240,7 +3577,7 @@ Record400_ass_subscript(Record400Object *self, PyObject *v, PyObject *w)
     if (self->file == NULL) {
         PyErr_SetString(file400Error, "No file for this record.");
         return -1;
-    }       
+    }
     if (w == NULL) {
         PyErr_SetString(file400Error, "NULL value not supported.");
         return -1;
@@ -3261,7 +3598,7 @@ Record400_subscript(Record400Object *self, PyObject *v)
     if (self->file == NULL) {
         PyErr_SetString(file400Error, "No file for this record.");
         return NULL;
-    }       
+    }
     pos = f_getFieldPos(self->file, v);
     if (pos < 0) {
         PyErr_SetString(file400Error, "Parameter not valid.");
@@ -3291,112 +3628,119 @@ static PyMethodDef Record400Object_methods[] = {
 };
 
 static PyObject *
-Record400_getattr(Record400Object *self, char *name)
+Record400_getattro(Record400Object *self, PyObject *nameobj)
 {
-    PyObject *fieldName, *retval;
-    if (*name == '_' && *(name + 1) != '_') {       
-        fieldName = PyString_FromString(name + 1);
-        retval = Record400_subscript(self, fieldName);
-        Py_DECREF(fieldName);
-        return retval;
-    } else
-        return Py_FindMethod(Record400Object_methods, (PyObject *)self, name);
+    char *name;
+    if (PyString_Check(nameobj)) {
+        name = PyString_AS_STRING(nameobj);
+        if (*name == '_' && *(name + 1) != '_')
+            return Record400_subscript(self, nameobj);
+    }
+    return PyObject_GenericGetAttr((PyObject *)self, nameobj);
 }
 
 static int
-Record400_setattr(Record400Object *self, char *name, PyObject *v)
+Record400_setattro(Record400Object *self, PyObject *nameobj, PyObject *v)
 {
-    PyObject *fieldName;
-    int retval;
-    if (*name == '_') {
-        fieldName = PyString_FromString(name + 1);
-        retval = Record400_ass_subscript(self, fieldName, v);
-        Py_DECREF(fieldName);
-        return retval;
-    } else
-        return -1;
+    char *name;
+    if (PyString_Check(nameobj)) {
+        name = PyString_AS_STRING(nameobj);
+        if (*name == '_')
+            return Record400_ass_subscript(self, nameobj, v);
+    }
+    return -1;
 }
-
-PyTypeObject Record400_Type = {
-    /* The ob_type field must be initialized in the module init function
-     * to be portable to Windows without using C++. */
-    PyObject_HEAD_INIT(NULL)
-    0,          /*ob_size*/
-    "Record400",            /*tp_name*/
-    sizeof(Record400Object),    /*tp_basicsize*/
-    0,          /*tp_itemsize*/
-    /* methods */
-    (destructor)Record400_dealloc, /*tp_dealloc*/
-    0,          /*tp_print*/
-    (getattrfunc)Record400_getattr,/*tp_getattr*/
-    (setattrfunc)Record400_setattr,/*tp_setattr*/
-    0,          /*tp_compare*/
-    0,          /*tp_repr*/
-    0,          /*tp_as_number*/
-    0,          /*tp_as_sequence*/
-    &Record400_as_mapping,  /*tp_as_mapping*/
-    0,          /*tp_hash*/
-};
 
 /* --------------------------------------------------------------------- */
 
 static int
-file400_initFile(File400Object *f, char *ovr)
+file400_initFile(File400Object *f)
 {
     char retFileLib[20], fileLib[21];
     Qus_EC_t error;
     char *buff, *p, *c;
-    Qdb_Qddfmt_t *foHd, foHd1;
+    char ovr;
+    Qdb_Qddfmt_t *foHd;
     Qdb_Qddffld_t *fiHd;
-    Qdb_Qdbwh_t *kyHd, kyHd1;
+    Qdb_Qdbwh_t *kyHd;
     Qdb_Qdbwhkey_t *kyKey;
+    Qdb_Qddfdft_t *fiDft;
     fieldInfoStruct *fieldInfo;
-    keyInfoStruct *keyInfo;
+    fieldInfoStruct *keyInfo;
     PyObject *obj;
     int i, j, offset;
+    char *dftbuf;
 
-
-    memset(fileLib, ' ', 20);
-    fileLib[20] = '\0';
-    memcpy(fileLib, f->file, strlen(f->file));
-    memcpy(fileLib + 10, f->lib, strlen(f->lib));
     /* first call is to get size of buffer. */
     error.Bytes_Provided = sizeof(error);
-    QDBRTVFD(&foHd1, sizeof(foHd1), retFileLib, "FILD0200", fileLib,
-             "*FIRST    ", ovr, "*LCL      ", "*EXT      ", &error);
-    if (error.Bytes_Available > 0)
-        return -1;
-    buff = p = PyMem_Malloc(foHd1.Qddbyava);
-    QDBRTVFD(buff, foHd1.Qddbyava, retFileLib, "FILD0200", fileLib,
-                 "*FIRST    ", ovr, "*LCL      ", "*EXT      ", &error);
+#pragma convert(37)
+    /* convert ovr (0/1) */
+    ovr = f->override | 0xF0;
+    utfToStrLen(f->name, fileLib, 10, 0);
+    utfToStrLen(f->lib, fileLib + 10, 10, 1);
+    buff = PyMem_Malloc(100000);
+    QDBRTVFD(buff, 100000, retFileLib, "FILD0200", fileLib,
+                 "*FIRST    ", &ovr, "*LCL      ", "*EXT      ", &error);
     if (error.Bytes_Available > 0) {
         PyMem_Free(buff);
         return -1;
-    }       
+    }
+    foHd = (Qdb_Qddfmt_t *) buff;
+    if (foHd->Qddbyava > 100000) {
+        buff = PyMem_Realloc(buff, foHd->Qddbyava);
+        foHd = (Qdb_Qddfmt_t *) buff;
+        QDBRTVFD(buff, foHd->Qddbyava, retFileLib, "FILD0200", fileLib,
+                     "*FIRST    ", &ovr, "*LCL      ", "*EXT      ", &error);
+    }
+#pragma convert(0)
+    if (error.Bytes_Available > 0) {
+        PyMem_Free(buff);
+        return -1;
+    }
+    p = buff;
     /* set returned file name */
-    str400tostr(f->retFile, retFileLib, 10);
-    str400tostr(f->retLib, (retFileLib + 10), 10);
+    strLenToUtf(retFileLib, 10, f->retFile);
+    strLenToUtf(retFileLib + 10, 10, f->retLib);
     /* get record info */
-    foHd = (Qdb_Qddfmt_t *) p;
-    str400tostr(f->recName, foHd->Qddfname, 10);
-    str400tostr(f->recId, foHd->Qddfseq, 13);
+    strLenToUtf(foHd->Qddfname, 10, f->recName);
+    strLenToUtf(foHd->Qddfseq, 13, f->recId);
     f->recLen = foHd->Qddfrlen;
     /* get field info */
-    f->fieldCount = foHd->Qddffldnum; 
+    f->fieldCount = foHd->Qddffldnum;
     f->fieldDict = PyDict_New();
     f->fieldArr = fieldInfo = PyMem_Malloc(f->fieldCount * sizeof(fieldInfoStruct));
     p += sizeof(Qdb_Qddfmt_t);
     fiHd = (Qdb_Qddffld_t *) p;
     for (i = 0; i < f->fieldCount; i++) {
-        str400tostr(fieldInfo->name, fiHd->Qddffldi, 10);
+        strLenToUtf(fiHd->Qddffldi, 10, fieldInfo->name);
         memcpy(&fieldInfo->type, fiHd->Qddfftyp, 2);
         fieldInfo->offset = fiHd->Qddffobo;
         fieldInfo->len = fiHd->Qddffldb;
         fieldInfo->digits = fiHd->Qddffldd;
         fieldInfo->dec = fiHd->Qddffldp;
+        fieldInfo->ccsid = fiHd->Qddfcsid;
+        fieldInfo->dft = Py_None;
+        fieldInfo->alwnull = fiHd->Qddffldst2.Qddffnul;
+        Py_INCREF(Py_None);
+        if (fiHd->Qddfdftd > 0) {
+            /* default value */
+            p += fiHd->Qddfdftd;
+            fiDft = (Qdb_Qddfdft_t *) p;
+            dftbuf = PyMem_Malloc(fiDft->Qddfdftl + 1);
+            strLenToUtf(p + 16, fiDft->Qddfdftl - 16, dftbuf);
+            if (fieldInfo->type < 4)
+                if (fieldInfo->dec == 0)
+                    fieldInfo->dft = PyInt_FromString(dftbuf, NULL, 0);
+                else
+                    fieldInfo->dft = PyFloat_FromDouble(atof(dftbuf));
+            else
+                fieldInfo->dft = PyString_FromString(dftbuf);
+            PyMem_Free(dftbuf);
+            p -= fiHd->Qddfdftd;
+        }
         /* description */
         p += fiHd->Qddftxtd;
-        str400tostr(fieldInfo->desc, p, 50);
+        strLenToUtf(p, 50, fieldInfo->desc);
         p -= fiHd->Qddftxtd;
         /* add to dictionary */
         obj = PyInt_FromLong(i);
@@ -3411,32 +3755,49 @@ file400_initFile(File400Object *f, char *ovr)
     PyMem_Free(buff);
     /* get key info */
     f->keyDict = PyDict_New();
-    f->keyCount = 0; 
-    f->keyLen = 0; 
-    QDBRTVFD(&kyHd1, sizeof(kyHd1), retFileLib, "FILD0300", fileLib,
-             "          ", ovr, "*LCL      ", "*EXT      ", &error);
+    f->keyCount = 0;
+    f->keyLen = 0;
+    f->curKeyLen = 0;
+#pragma convert(37)
+    buff = PyMem_Malloc(1024);
+    QDBRTVFD(buff, 1024, retFileLib, "FILD0300", fileLib,
+             "          ", &ovr, "*LCL      ", "*EXT      ", &error);
     if (error.Bytes_Available == 0) {
-        buff = p = PyMem_Malloc(kyHd1.Byte_Avail);
-        QDBRTVFD(buff, kyHd1.Byte_Avail, retFileLib, "FILD0300", fileLib,
-                 "          ", ovr, "*LCL      ", "*EXT      ", &error);
-        if (error.Bytes_Available > 0) {
-            PyMem_Free(buff);
-            return -1;
-        }       
+        kyHd = (Qdb_Qdbwh_t *) buff;
+        if (kyHd->Byte_Avail > 1024) {
+            buff = PyMem_Realloc(buff, kyHd->Byte_Avail);
+            kyHd = (Qdb_Qdbwh_t *) buff;
+            QDBRTVFD(buff, kyHd->Byte_Avail, retFileLib, "FILD0300", fileLib,
+                     "          ", &ovr, "*LCL      ", "*EXT      ", &error);
+            if (error.Bytes_Available > 0) {
+                PyMem_Free(buff);
+                return -1;
+            }
+        }
+#pragma convert(0)
+        p = buff;
         /* find offset to first record format */
-        kyHd = (Qdb_Qdbwh_t *) p;
         f->keyCount = kyHd->Rec_Key_Info->Num_Of_Keys;
         if (f->keyCount > 0) {
             p += kyHd->Rec_Key_Info->Key_Info_Offset;
             kyKey = (Qdb_Qdbwhkey_t *) p;
-            f->keyArr = keyInfo = PyMem_Malloc(f->keyCount * sizeof(keyInfoStruct));
+            f->keyArr = keyInfo = PyMem_Malloc(f->keyCount * sizeof(fieldInfoStruct));
             for (j = 0; j < f->keyCount; j++) {
-                str400tostr(keyInfo->name, kyKey->Int_Field_Name, 10);
+                strLenToUtf(kyKey->Int_Field_Name, 10, keyInfo->name);
                 keyInfo->type = kyKey->Data_Type;
                 keyInfo->offset = f->keyLen;
                 keyInfo->len = kyKey->Field_Len;
                 keyInfo->digits = kyKey->Num_Of_Digs;
                 keyInfo->dec = kyKey->Dec_Pos;
+                /* get info from fieldArr */
+                obj = PyDict_GetItemString(f->fieldDict, keyInfo->name);
+                if (obj != NULL) {
+                    strcpy(keyInfo->desc, f->fieldArr[PyInt_AS_LONG(obj)].desc);
+                    keyInfo->ccsid = f->fieldArr[PyInt_AS_LONG(obj)].ccsid;
+                } else {
+                    *keyInfo->desc = '\0';
+                    keyInfo->ccsid = 0;
+                }
                 /* add to dictionary */
                 obj = PyInt_FromLong(j);
                 PyDict_SetItemString(f->keyDict, keyInfo->name, obj);
@@ -3447,10 +3808,12 @@ file400_initFile(File400Object *f, char *ovr)
             }
         }
     }
+    PyMem_Free(buff);
     /* allocate storage for temporary record and key buffer */
     f->recbuf = PyMem_Malloc(f->recLen + 1);
+    f->tmpbuf = PyMem_Malloc(f->recLen + 1);
     f->keybuf = PyMem_Malloc(f->keyLen + 1);
-    /* return ok */ 
+    /* return ok */
     return 0;
 }
 
@@ -3466,22 +3829,29 @@ initint(PyObject *d, char *name, int val)
 }
 
 char File400_doc[] =
-"File400(Filename[mode, options, lib, mbr, qry]) -> File400 Object\n\
+"File400(Filename[mode, options, lib, mbr, qry, strconv]) -> File400 Object\n\
 \n\
 Creates a new File400 Object.\n\
-Filename must exist. Mode None(default) does not open the file,\n\
-Use mode 'r' for reading , 'a' for appending \n\
-and 'r+' for read, update and append.\n\
-The options shold be a string with this format: 'arrseq=Y, secure=Y'.\n\
-Options:\n\ 
-arrseq  - Arrival sequence. (Y, N(default))\n\
-blkrcd  - Preforms record blocking. (Y(default), N)\n\
-ccsid   - Specifies the CCSID. Default is 0 (the job CCSID is used.)\n\
-commit  - Open under commitment control. (Y, N(default)).\n\
-secure  - Secure from overrides. (Y, N(default)).\n\
-You can specify the library, special values are *LIBL(default) and *CURLIB.\n\
-You can also specify the member, special value are *FIRST(default).\n\
-The keyword qry specifies an opnqryf string.\n\
+Filename must exist.\n\
+mode - Open mode\n\
+    None - (default) does not open the file.\n\
+    'r'  - open for read.\n\
+    'a'  - open for append.\n\
+    'r+' - open for read, update and append.\n\
+options - Should be a string with this format: 'arrseq=Y, secure=Y'.\n\
+    arrseq  - Arrival sequence. (Y, N(default))\n\
+    blkrcd  - Preforms record blocking. (Y(default), N)\n\
+    commit  - Open under commitment control. (Y, N(default)).\n\
+    secure  - Secure from overrides. (Y, N(default)).\n\
+lib     - Library, special values are *LIBL(default) and *CURLIB.\n\
+member  - Member to be opened, special value are *FIRST(default).\n\
+qry     - Specifie an opnqryf string.\n\
+strconv - Specifies how strings should be converted.\n\
+    0  - No conversion.\n\
+    1  - Converts to utf-8.\n\
+    2  - Converts to ucs2.\n\
+    The default is set by setDefaultStringConversion, and initially it is 1.\n\
+delay   - Delay file initialization and open until first use.\n\
 \n\
 Methodes:\n\
   open       - Open file.\n\
@@ -3519,40 +3889,39 @@ See the __doc__ string on each method for details.\n\
 >>> f = File400('YOURFILE')\n\
 >>> print f.open__doc__";
 
-DL_EXPORT(PyObject *)
-file400_File400(PyObject *self, PyObject *args, PyObject *keywds)
+static PyObject*
+File400_new(PyTypeObject *type, PyObject *args, PyObject *keywds)
 {
     int i;
-    char *file, *override = "1";
+    char *file;
     char *lib = "*LIBL";
     char *mbr = "*FIRST";
     char *qry = NULL;
+    int strconv = default_strconv;
+    int delay = 1;
     char qrybuf[1024];
-    static char *kwlist[] = {"file", "mode", "options", "lib", "mbr", "qry", NULL};
+    static char *kwlist[] = {"file", "mode", "options", "lib", "mbr", "qry", "strconv", "delay", NULL};
     PyObject *mode = Py_None, *keyw = Py_None;
     File400Object *nf;
 
-    if (!PyArg_ParseTupleAndKeywords(args, keywds, "s|OOsss:File400", kwlist, 
-                                     &file, &mode, &keyw, &lib, &mbr, &qry))
+    if (!PyArg_ParseTupleAndKeywords(args, keywds, "s|OOsssii:File400", kwlist,
+                                     &file, &mode, &keyw, &lib, &mbr, &qry, &strconv, &delay))
         return NULL;
     if (strlen(file) > 10 || strlen(lib) > 10 || strlen(mbr) > 10) {
         PyErr_SetString(file400Error, "File,Lib and Member have max length of 10.");
         return NULL;
     }
-    /* convert file, lib and mbr to uppercase */
-    strtoupper(file);
-    strtoupper(lib);
-    strtoupper(mbr);
-    /* check if keyword secure */
-    if (PyString_Check(keyw) && strstr(PyString_AS_STRING(keyw), "secure=Y"))
-        override = "0";
+    if (strconv < 0 || strconv > 2) {
+        PyErr_SetString(file400Error, "Valid strconv values: 0=None, 1=utf-8, 2=ucs2.");
+        return NULL;
+    }
     /* if opnqryfile  */
     if (qry) {
         if (strlen(qry) > 1000) {
             PyErr_SetString(file400Error, "Query string exceeds 1000.");
             return NULL;
         }
-        sprintf(qrybuf, "ovrdbf %s TOFILE(%s/%s) share(*yes)", file, lib, file); 
+        sprintf(qrybuf, "ovrdbf %s TOFILE(%s/%s) share(*yes)", file, lib, file);
         if (f_system(qrybuf)) {
             PyErr_SetString(file400Error, "Ovrdbf failed.");
             return NULL;
@@ -3563,8 +3932,9 @@ file400_File400(PyObject *self, PyObject *args, PyObject *keywds)
         if (!strstr(qrybuf, "FILE(")) {
             sprintf(qrybuf, "opnqryf %s ", file);
         } else
-            strcpy(qrybuf, "opnqryf ");         
+            strcpy(qrybuf, "opnqryf ");
         strcat(qrybuf, qry);
+        strcat(qrybuf, " ccsid(*hex)");
         if (f_system(qrybuf)) {
             PyErr_SetString(file400Error, "Opnqryf failed.");
             return NULL;
@@ -3574,65 +3944,206 @@ file400_File400(PyObject *self, PyObject *args, PyObject *keywds)
     if (nf == NULL)
         return NULL;
     nf->fp = NULL;
-    strcpy(nf->file, file);
-    strcpy(nf->lib, lib);
-    strcpy(nf->mbr, mbr);
+    strtoupper(strcpy(nf->name, file));
+    strtoupper(strcpy(nf->lib, lib));
+    strtoupper(strcpy(nf->mbr, mbr));
     nf->qry = (qry != NULL);
+    nf->strconv = strconv;
     nf->recbuf = NULL;
+    nf->tmpbuf = NULL;
     nf->keybuf = NULL;
     nf->fieldDict = NULL;
     nf->fieldArr = NULL;
     nf->keyDict = NULL;
     nf->keyArr = NULL;
-    /* get and store file information */
-    if (file400_initFile(nf, override)) {
-        PyErr_SetString(file400Error, "Error getting file information.");
-        Py_DECREF(nf);
-        return NULL;
-    }
-    /* open the file */
-    if (mode != Py_None) { 
-        if (File400_open(nf, Py_BuildValue("OO", mode, keyw), NULL) == NULL) {
-            Py_DECREF(nf);
-            return NULL;
+    nf->delay = delay;
+    if (PyString_Check(keyw) && strstr(PyString_AS_STRING(keyw), "secure=Y"))
+        nf->override = '0';
+    else
+        nf->override = '1';
+    nf->omode = 0;
+    nf->lmode = -1;
+    nf->fieldCount = 0;
+    nf->keyCount = 0;
+    if (delay == 1) {
+        if (mode == Py_None) {
+            nf->omode = F4_OREAD;
+        } else {
+            char *smode;
+            if (!PyString_Check(mode)) {
+                PyErr_SetString(file400Error, "Open mode not a valid type.");
+                return NULL;
+            }
+            smode = PyString_AS_STRING(mode);
+            if (!strcmp(smode, "r")) {
+                nf->omode = F4_OREAD;
+            } else if (!strcmp(smode, "a")) {
+                nf->omode = F4_OWRITE;
+            } else if (!strcmp(smode, "r+")) {
+                nf->omode = F4_OUPDATE;
+            } else {
+                PyErr_SetString(file400Error, "Open mode not valid.");
+                return NULL;
+            }
+        }
+    } else {
+        if (mode != Py_None) {
+            /* open the file */
+            if (File400_open(nf, Py_BuildValue("OO", mode, keyw), NULL) == NULL) {
+                Py_DECREF(nf);
+                return NULL;
+            }
+        } else {
+            /* only file information */
+            if (file400_initFile(nf)) {
+                PyErr_SetString(file400Error, "Error getting file information.");
+                Py_DECREF(nf);
+                return NULL;
+            }
         }
     }
     return (PyObject *) nf;
 }
 
+
+char SetDefaultStringConversion_doc[] =
+"setDefaultStringConversion(int) -> None\n\
+\n\
+Sets the default string conversion for File400 objects.\n\
+    0  - No conversion.\n\
+    1  - (default)Converts to utf-8.\n\
+    2  - Converts to ucs2.\n\
+";
+
+static PyObject*
+file400_setDefaultStringConversion(PyObject *self, PyObject *args, PyObject *keywds)
+{
+    int strconv ;
+    if (!PyArg_ParseTuple(args, "i:setDefaultStringConversion", &strconv))
+        return NULL;
+    if (strconv < 0 || strconv > 2) {
+        PyErr_SetString(file400Error, "Valid strconv values: 0=None, 1=utf-8, 2=ucs2.");
+        return NULL;
+    }
+    /* set globally */
+    default_strconv = strconv;
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+PyTypeObject File400_Type = {
+    PyObject_HEAD_INIT(NULL)
+    0,                                          /*ob_size*/
+    "File400",                                  /*tp_name*/
+    sizeof(File400Object),                      /*tp_basicsize*/
+    0,                                          /*tp_itemsize*/
+    (destructor)File400_dealloc,                /*tp_dealloc*/
+    0,                                          /*tp_print*/
+    0,                                          /*tp_getattr*/
+    0,                                          /*tp_setattr*/
+    0,                                          /*tp_compare*/
+    0,                                          /*tp_repr*/
+    0,                                          /*tp_as_number*/
+    0,                                          /*tp_as_sequence*/
+    &File400_as_mapping,                        /*tp_as_mapping*/
+    0,                                          /*tp_hash*/
+    0,                                          /*tp_call*/
+    (reprfunc)File400_str,                      /*tp_str*/
+    (getattrofunc)File400_getattro,             /*tp_getattro*/
+    (setattrofunc)File400_setattro,             /*tp_setattro*/
+    0,                                          /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT,                         /* tp_flags */
+    File400_doc,                                /* tp_doc */
+    0,                                          /* tp_traverse */
+    0,                                          /* tp_clear */
+    0,                                          /* tp_richcompare */
+    0,                                          /* tp_weaklistoffset */
+    (getiterfunc)File400_self,                  /* tp_iter */
+    (iternextfunc)File400_iternext,             /* tp_iternext */
+    File400Object_methods,                      /* tp_methods */
+    0,                                          /* tp_members */
+    0,                                          /* tp_getset */
+    0,                                          /* tp_base */
+    0,                                          /* tp_dict */
+    0,                                          /* tp_descr_get */
+    0,                                          /* tp_descr_set */
+    0,                                          /* tp_dictoffset */
+    0,                                          /* tp_init */
+    0,                                          /* tp_alloc */
+    File400_new,                                /* tp_new */
+    0,                                          /* tp_free */
+};
+
+PyTypeObject Record400_Type = {
+    PyObject_HEAD_INIT(NULL)
+    0,                                          /*ob_size*/
+    "Record400",                                /*tp_name*/
+    sizeof(Record400Object),                    /*tp_basicsize*/
+    0,                                          /*tp_itemsize*/
+    (destructor)Record400_dealloc,              /*tp_dealloc*/
+    0,                                          /*tp_print*/
+    0,                                          /*tp_getattr*/
+    0,                                          /*tp_setattr*/
+    0,                                          /*tp_compare*/
+    0,                                          /*tp_repr*/
+    0,                                          /*tp_as_number*/
+    0,                                          /*tp_as_sequence*/
+    &Record400_as_mapping,                      /*tp_as_mapping*/
+    0,                                          /*tp_hash*/
+    0,                                          /*tp_call*/
+    (reprfunc)Record400_getString,              /*tp_str*/
+    (getattrofunc)Record400_getattro,           /*tp_getattro*/
+    (setattrofunc)Record400_setattro,           /*tp_setattro*/
+    0,                                          /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT,                         /* tp_flags */
+    Record400_doc,                              /* tp_doc */
+    0,                                          /* tp_traverse */
+    0,                                          /* tp_clear */
+    0,                                          /* tp_richcompare */
+    0,                                          /* tp_weaklistoffset */
+    0,                                          /* tp_iter */
+    0,                                          /* tp_iternext */
+    Record400Object_methods,                    /* tp_methods */
+    0,                                          /* tp_members */
+    0,                                          /* tp_getset */
+    0,                                          /* tp_base */
+    0,                                          /* tp_dict */
+    0,                                          /* tp_descr_get */
+    0,                                          /* tp_descr_set */
+    0,                                          /* tp_dictoffset */
+    0,                                          /* tp_init */
+    0,                                          /* tp_alloc */
+    Record400_new,                              /* tp_new */
+    0,                                          /* tp_free */
+};
+
+
 /* List of functions defined in the module */
 static PyMethodDef file400_memberlist[] = {
-    {"File400", (PyCFunction)file400_File400, METH_VARARGS|METH_KEYWORDS, File400_doc},
+    {"setDefaultStringConversion", (PyCFunction)file400_setDefaultStringConversion,
+                METH_VARARGS, SetDefaultStringConversion_doc},
     {NULL,      NULL}
 };
 
 /* Initialization function for the module */
-/* Not a normal initialization because this goes into builtins */
-DL_EXPORT(void)
+void
 initfile400(void)
 {
     PyObject *m, *d;
-
-    /* Initialize the type of the new type object here; doing it here
-     * is required for portability to Windows without requiring C++. */
+    /* Create the module and add the functions */
     File400_Type.ob_type = &PyType_Type;
     Record400_Type.ob_type = &PyType_Type;
 
-    /* Create the module and add the functions */
     m = Py_InitModule("file400", file400_memberlist);
-
     /* Add some symbolic constants to the module */
     d = PyModule_GetDict(m);
     file400Error = PyErr_NewException("file400.error", NULL, NULL);
     PyDict_SetItemString(d, "error", file400Error);
-    dummyClassName = PyString_FromString("dummy");
+    PyDict_SetItemString(d, "File400", (PyObject *)&File400_Type);
+    PyDict_SetItemString(d, "Record400", (PyObject *)&Record400_Type);
+    dummyClassName = PyString_FromString("FileRow");
     dummyClass = PyClass_New(NULL, PyDict_New(), dummyClassName);
+    if (PyErr_Occurred() ) {
+        Py_FatalError("Can not initialize file400");
+    }
 }
-
-
-
-
-
-
-
-

@@ -2,9 +2,9 @@
  * _os400
  * 
  *--------------------------------------------------------------------
- * Copyright (c) 2001 by Per Gummedal.
+ * Copyright (c) 2010 by Per Gummedal.
  *
- * p.g@figu.no
+ * per.gummedal@gmail.com
  * 
  * By obtaining, using, and/or copying this software and/or its
  * associated documentation, you agree that you have read, understood,
@@ -14,16 +14,16 @@
  * associated documentation for any purpose and without fee is hereby
  * granted, provided that the above copyright notice appears in all
  * copies, and that both that copyright notice and this permission notice
- * appear in supporting documentation, and that the name of FIGU DATA AS
- * or the author not be used in advertising or publicity pertaining to
+ * appear in supporting documentation, and that the name of the author
+ * not to be used in advertising or publicity pertaining to
  * distribution of the software without specific, written prior
  * permission.
  * 
- * FIGU DATA AS AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO
- * THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS.  IN NO EVENT SHALL FIGU DATA AS OR THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
+ * INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL,
+ * INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER
+ * RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
  * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *------------------------------------------------------------------------
@@ -50,6 +50,7 @@
 #include <qwcrdtaa.h>
 #include <qleawi.h>
 #include <iconv.h>
+#include <recio.h>
 #include "_os400.h"
 #include "as400misc.h"
 
@@ -63,15 +64,13 @@ typedef struct {
     decimal(5,0) wKeySize;
     decimal(7,0) wCurPos;
 } ArrayType;
-/* not included in cobject.h, copied from cobject.c */
-typedef struct {
-    PyObject_HEAD
-    void *cobject;
-    void *desc;
-    void (*destructor)(void *);
-} PyCObject;
 #endif
 
+typedef void (*destructor1)(void * __ptr128);
+
+void * __ptr128 OS400ProcReturn_AsPtr(PyObject *);
+
+#pragma datamodel(P128)
 typedef void *(OS_func_0) (void);
 typedef void *(OS_func_1) (void *p1);
 typedef void *(OS_func_2) (void *p1, void *p2);
@@ -106,6 +105,8 @@ typedef void (OS_pgm_9) (void *p1, void *p2, void *p3, void *p4, void *p5,
 typedef void (OS_pgm_10) (void *p1, void *p2, void *p3, void *p4, void *p5,
                             void *p6, void *p7, void *p8, void *p9, void *p10);
 
+#pragma datamodel(pop)
+
 #pragma linkage(OS_pgm_0, OS)
 #pragma linkage(OS_pgm_1, OS)
 #pragma linkage(OS_pgm_2, OS)
@@ -117,17 +118,6 @@ typedef void (OS_pgm_10) (void *p1, void *p2, void *p3, void *p4, void *p5,
 #pragma linkage(OS_pgm_8, OS)
 #pragma linkage(OS_pgm_9, OS)
 #pragma linkage(OS_pgm_10, OS)
-/*#pragma argument(OS_func_0, OS)
-#pragma argument(OS_func_1, OS)
-#pragma argument(OS_func_2, OS)
-#pragma argument(OS_func_3, OS)
-#pragma argument(OS_func_4, OS)
-#pragma argument(OS_func_5, OS)
-#pragma argument(OS_func_6, OS)
-#pragma argument(OS_func_7, OS)
-#pragma argument(OS_func_8, OS)
-#pragma argument(OS_func_9, OS)
-#pragma argument(OS_func_10, OS)*/
 
 static PyObject *os400Error;
 
@@ -161,7 +151,7 @@ f_cvtToPy(unsigned char *p, char type, int len,
             return PyInt_FromLong(dl);
         } else if (len == 8) {
             memcpy(&dll, p, 8);
-            return PyLong_FromLong(dll);
+            return PyLong_FromLongLong(dll);
         } else {
             PyErr_SetString(os400Error, "Data type error.");
             return NULL;
@@ -187,7 +177,7 @@ f_cvtToPy(unsigned char *p, char type, int len,
             char buf[100], *ss;
             zonedtostr((char *)buf, p, digits, dec, '.');  
             if (dec == 0)
-                return PyLong_FromLong(strtoll((char *)buf, &ss, 10));
+                return PyLong_FromLongLong(strtoll((char *)buf, &ss, 10));
             else
                 return PyFloat_FromDouble(strtod((char *)buf, &ss));
         }
@@ -199,12 +189,23 @@ f_cvtToPy(unsigned char *p, char type, int len,
             char buf[100], *ss;
             packedtostr((char *)buf, p, digits, dec, '.');  
             if (dec == 0)
-                return PyLong_FromLong(strtoll((char *)buf, &ss, 10));
+                return PyLong_FromLongLong(strtoll((char *)buf, &ss, 10));
             else
                 return PyFloat_FromDouble(strtod((char *)buf, &ss));
         }
     /* char */
     } else if (type == 'c') {
+        if (len >= 8 && !strncmp(p, "\0\0\0", 3) && !strncmp(p + 4, "\0\0\0", 3)) {
+            char *c;
+            PyObject *ep = PyString_FromStringAndSize(NULL, len);
+            c = PyString_AS_STRING(ep);
+            memcpy(c, p, 8);
+            if (len > 8)
+                strLenToUtf(p + 8, len - 8, c + 8); 
+            return ep;
+        } else
+            return strLenToUtfPy(p, len);
+    } else if (type == 'b') {
         return PyString_FromStringAndSize(p, f_strlen(p, len));
     } else {
         PyErr_SetString(os400Error, "Data type not valid.");
@@ -254,7 +255,7 @@ f_cvtFromPy(unsigned char *p, char type, int len,
                 return 0;
             }
         }
-        PyErr_SetString(os400Error, "Data conversion error.");
+        PyErr_SetString(os400Error, "Data conversion error. (int)");
         return -1;
     /* float */
     } else if (type == 'f') {
@@ -266,7 +267,7 @@ f_cvtFromPy(unsigned char *p, char type, int len,
             else if (PyFloat_Check(o))
                 dfl = PyFloat_AS_DOUBLE(o);
             else {
-                PyErr_SetString(os400Error, "Data conversion error.");
+                PyErr_SetString(os400Error, "Data conversion error. (float)");
                 return -1;
             }
             memcpy(p, &dfl, len);
@@ -300,7 +301,7 @@ f_cvtFromPy(unsigned char *p, char type, int len,
             QXXDTOZ(p, digits, dec, PyFloat_AS_DOUBLE(o));
             return 0;
         }
-        PyErr_SetString(os400Error, "Data conversion error.");
+        PyErr_SetString(os400Error, "Data conversion error. (zoned)");
         return -1;
     /* packed */
     } else if (type == 'd') {
@@ -317,10 +318,34 @@ f_cvtFromPy(unsigned char *p, char type, int len,
             QXXDTOP(p, digits, dec, PyFloat_AS_DOUBLE(o));
             return 0;
         }
-        PyErr_SetString(os400Error, "Data conversion error.");
+        PyErr_SetString(os400Error, "Data conversion error. (packed)");
         return -1;
     /* char */
     } else if (type == 'c') {
+        if (PyString_Check(o)) { 
+            int i = PyString_GET_SIZE(o);
+            c = PyString_AS_STRING(o);
+            /* special case for error parameters */
+            if (i > 3 && !strncmp(c, "\0\0\0", 3) || !strncmp(c, "\xff\xff\xff", 3)) {
+                if (i >= len)
+                    memcpy(p, c, len);
+                else {
+                    memcpy(p, c, i);
+                    p += i;
+                    memset(p, 0x40, len - i);
+                }
+            } else
+                utfToStrLen(c, p, len, 0);
+            return 0;
+        } else  if (PyUnicode_Check(o)) {
+            int i = PyUnicode_GET_DATA_SIZE(o);
+            c = (char *)PyUnicode_AS_DATA(o);
+            unicodeToEbcdic(0, c, i, p, len);
+            return 0;
+        }
+        PyErr_SetString(os400Error, "Data conversion error. (string)");
+        return -1;
+    } else if (type == 'b') {
         if (PyString_Check(o)) { 
             int i = PyString_GET_SIZE(o);
             c = PyString_AS_STRING(o);
@@ -329,11 +354,11 @@ f_cvtFromPy(unsigned char *p, char type, int len,
             else {
                 memcpy(p, c, i);
                 p += i;
-                memset(p, ' ', len - i);
+                memset(p, 0x40, len - i);
             }
             return 0;
         }
-        PyErr_SetString(os400Error, "Data conversion error.");
+        PyErr_SetString(os400Error, "Data conversion error. (binary)");
         return -1;
     } else {
         PyErr_SetString(os400Error, "Data type not supported.");
@@ -382,7 +407,7 @@ f_checkparm(parmtype_t *ptype, PyObject *parm)
             ptype->len = ptype->len / 2 + 1;
             break;
         case 'i': case 'f': case 'z': 
-        case 'c':
+        case 'c': case 'b':
             break;
         default:
             PyErr_SetString(os400Error, "Not a valid type.");
@@ -392,42 +417,46 @@ f_checkparm(parmtype_t *ptype, PyObject *parm)
         ptype->len = 0;
     } else {
         PyErr_SetString(os400Error, "Not a valid type.");
-        return -1;                  
+        return -1;
     }
     return 0;
 }
 
 /* put value into parameter buffer */   
 static int
-f_setparm(unsigned char *buf, parmtype_t *ptype, PyObject *v)
+f_setparm(parmtype_t *ptype, PyObject *v)
 {
     _OPENPTR o;
     if (ptype->type == 'p') {
         Py_DECREF(ptype->obj);
-        ptype->obj = v;
-        Py_INCREF(v);
-        if (PyString_Check(v)) 
-            ptype->ptr = PyString_AS_STRING(v);
-        else {
-            o = PyCObject_AsVoidPtr(v);
-            ptype->ptr = o;
+        if (PyString_Check(v)) {
+            ptype->obj = PyString_FromStringAndSize(NULL, PyString_Size(v));
+            ptype->ptr = PyString_AS_STRING(ptype->obj);
+            utfToStr(PyString_AS_STRING(v), ptype->ptr);
+        } else if (OS400ProcReturn_Check(v)) {
+            ptype->obj = v;
+            Py_INCREF(v);
+            ptype->ptr = OS400ProcReturn_AsPtr(v);
+        } else {
+            PyErr_SetString(os400Error, "Parameter not valid.");
+            return -1;
         }
         return 0;
     } else {
-        return f_cvtFromPy(buf + ptype->offset, ptype->type, ptype->len, 
+        return f_cvtFromPy(ptype->ptr, ptype->type, ptype->len, 
                            ptype->digits, ptype->dec, v);
     }
 }
 
 /* get value from parameter buffer */   
 static PyObject *
-f_getparm(unsigned char *buf, parmtype_t *ptype) 
+f_getparm(parmtype_t *ptype) 
 {
     if (ptype->type == 'p') {
         Py_INCREF(ptype->obj);
         return ptype->obj;
     } else {
-        return f_cvtToPy(buf + ptype->offset, ptype->type, ptype->len, 
+        return f_cvtToPy(ptype->ptr, ptype->type, ptype->len, 
                          ptype->digits, ptype->dec);
     }
 }
@@ -441,38 +470,6 @@ f_srvpgm_activate(OS400Srvpgm *self)
     }
 }
 
-/* convert form one ccsid to another */
-static PyObject *
-f_convert(iconv_t cd, char *in, int size)
-{
-    size_t insize, outsize, newsize;
-    int pos;
-    char *out;
-    PyObject *outobj;
-    insize = outsize = newsize = size;
-    outobj = PyString_FromStringAndSize(NULL, newsize);
-    if (outobj == NULL) return NULL;
-    out = PyString_AsString(outobj);
-    iconv(cd, &in, &insize, &out, &outsize);
-    while (insize > 0) {
-        pos = newsize - outsize;
-        newsize += 10 + outsize * 2;
-        _PyString_Resize(&outobj, newsize);
-        if (outobj == NULL) return NULL;
-        out = PyString_AsString(outobj) + pos;
-        outsize = newsize - pos;
-        iconv(cd, &in, &insize, &out, &outsize);
-        /* if outsize still is same size there is a bug */
-        if (outsize == newsize - pos) {
-            PyErr_SetString(os400Error, "Error in code conversion.");
-            return NULL;
-        }
-    }
-    if (outsize > 0)
-        _PyString_Resize(&outobj, newsize - outsize);
-    return outobj;
-}
-
 /* ---------------------------------------------------------------------*/
 /* OS400Program methods  */
 
@@ -480,12 +477,11 @@ static void
 OS400Program_dealloc(OS400Program *self)
 {
     int i;
-    if (self->parmbuf) { 
-        PyMem_Free(self->parmbuf);
-        for (i = 0; i < self->parmCount; i++) {
-            if (self->types[i].type == 'p')
-                Py_DECREF(self->types[i].obj);
-        }
+    for (i = 0; i < self->parmCount; i++) {
+        if (self->types[i].type == 'p')
+            Py_DECREF(self->types[i].obj);
+        else
+            free(self->types[i].ptr);
     }
     PyObject_Del(self);
 }
@@ -516,7 +512,7 @@ OS400Program_call(OS400Program *self, PyObject *args, PyObject *keyws)
     }
     for (i = 0; i < parmCount; i++) {
         v = PyTuple_GetItem(args, i);
-        if (f_setparm(self->parmbuf, &(self->types[i]), v))
+        if (f_setparm(&(self->types[i]), v))
             return NULL;
     }       
     /* call the program */
@@ -578,6 +574,7 @@ OS400Program_call(OS400Program *self, PyObject *args, PyObject *keyws)
     Py_INCREF(Py_None);
     return Py_None;
 EXCP1:
+    self->ptr = NULL;
     PyErr_SetString(os400Error, "Error calling program.");
     return NULL;    
 }
@@ -628,7 +625,7 @@ OS400Program_ass_subscript(OS400Program *self, PyObject *v, PyObject *w)
         PyErr_SetString(os400Error, "Not so many parameters.");
         return -1;
     }
-    return f_setparm(self->parmbuf, &(self->types[pos]), w);
+    return f_setparm(&(self->types[pos]), w);
 }
 
 static PyObject *
@@ -644,7 +641,7 @@ OS400Program_subscript(OS400Program *self, PyObject *v)
         PyErr_SetString(os400Error, "Not so many parameters.");
         return NULL;
     }
-    return f_getparm(self->parmbuf, &(self->types[pos]));
+    return f_getparm(&(self->types[pos]));
 }
 
 static PyMappingMethods OS400Program_as_mapping = {
@@ -682,6 +679,66 @@ PyTypeObject OS400Program_Type = {
     0,          /*tp_str*/
 };
 
+
+/* --------------------------------------------------------------------- */
+/* OS400ProcReturn methods  */
+
+PyObject *
+OS400ProcReturn_New(void * __ptr128 obj, void (*destr)(void * __ptr128))
+{
+    OS400ProcReturn *self;
+
+    self = PyObject_NEW(OS400ProcReturn, &OS400ProcReturn_Type);
+    if (self == NULL)
+        return NULL;
+    self->obj = obj;
+    self->destructor = (destructor1)destr;
+    return (PyObject *)self;
+}
+
+void * __ptr128
+OS400ProcReturn_AsPtr(PyObject *self)
+{
+    if (self && self->ob_type == &OS400ProcReturn_Type)
+        return ((OS400ProcReturn *)self)->obj;
+    PyErr_SetString(PyExc_TypeError,
+                    "Not an OS400ProcReturn object");
+    return NULL;
+}
+
+static void
+OS400ProcReturn_dealloc(OS400ProcReturn *self)
+{
+    if (self->destructor)
+        (self->destructor)(self->obj);
+    PyObject_Del(self);
+}
+
+PyTypeObject OS400ProcReturn_Type = {
+    PyObject_HEAD_INIT(&PyType_Type)
+    0,				/*ob_size*/
+    "OS400ProcReturn",		/*tp_name*/
+    sizeof(OS400ProcReturn),/*tp_basicsize*/
+    0,				/*tp_itemsize*/
+    /* methods */
+    (destructor)OS400ProcReturn_dealloc, /*tp_dealloc*/
+    0,				/*tp_print*/
+    0,				/*tp_getattr*/
+    0,				/*tp_setattr*/
+    0,				/*tp_compare*/
+    0,				/*tp_repr*/
+    0,				/*tp_as_number*/
+    0,				/*tp_as_sequence*/
+    0,				/*tp_as_mapping*/
+    0,				/*tp_hash*/
+    0,				/*tp_call*/
+    0,				/*tp_str*/
+    0,				/*tp_getattro*/
+    0,				/*tp_setattro*/
+    0,				/*tp_as_buffer*/
+    0,				/*tp_flags*/
+    0           	/*tp_doc*/
+};
 /* --------------------------------------------------------------------- */
 /* OS400Srvpgm methods  */
 
@@ -704,6 +761,7 @@ Each parameter description shold be a tuple with the following fields:\n\
   Type(string), length(int), decimals(int, optional)\n\
   The following Types are valid:\n\
     'c' String. ('c',20)\n\
+    'b' String. ('b',20) (not converted from to utf-8)\n\
     'i' Binary(Integer). ('i', 4) Length is here number of bytes (4/8).\n\
     'f' Float. ('f', 4) Length is here number of bytes (4/8).\n\
     'd' packed decimal ('d',5,0)\n\
@@ -723,10 +781,11 @@ static PyObject *
 OS400Srvpgm_proc(OS400Srvpgm *self, PyObject *args)
 {
     int i;
-    PyObject *name, *retval = Py_None, *parm = Py_None, *item, *sub;
+    char *name;
+    PyObject *retval = Py_None, *parm = Py_None, *item, *sub;
     OS400Proc *proc;
 
-    if (!PyArg_ParseTuple(args, "SOO:Program", &name, &retval, &parm))
+    if (!PyArg_ParseTuple(args, "sOO:Program", &name, &retval, &parm))
         return NULL;
     if (parm != Py_None && !PyTuple_Check(parm)) {
         PyErr_SetString(os400Error, "Parmaters must be a tuple.");
@@ -735,19 +794,15 @@ OS400Srvpgm_proc(OS400Srvpgm *self, PyObject *args)
     proc = PyObject_New(OS400Proc, &OS400Proc_Type);
     if (proc == NULL)
         return NULL;
-    Py_INCREF(name);
-    proc->name = (PyStringObject *)name;
+    utfToStr(name, proc->name);
     Py_INCREF(self);
     proc->srvpgm = self;
     proc->ptr = NULL;
-    proc->parmbuf = NULL;       
-    proc->parmLen = 0;
     proc->parmCount = 0;
     Py_INCREF(parm);
     Py_INCREF(retval);
     /* return value */
     if (retval != Py_None) {
-        proc->retval.offset = 0;
         if (f_checkparm(&(proc->retval), retval)) { 
             Py_DECREF(proc);
             return NULL;
@@ -772,20 +827,12 @@ OS400Srvpgm_proc(OS400Srvpgm *self, PyObject *args)
                 Py_DECREF(proc);
                 return NULL;
             } else {
-                proc->types[i].offset = proc->parmLen;
-                proc->parmLen += proc->types[i].len;
-            }
-        }
-    }
-    /* allcoate parameter area and set pointers */
-    if (proc->parmLen > 0) {
-        proc->parmbuf = PyMem_Malloc(proc->parmLen + 100);
-        for (i = 0; i < proc->parmCount; i++) {
-            if (proc->types[i].type != 'p')
-                proc->types[i].ptr = proc->parmbuf + proc->types[i].offset;
-            else {
-                proc->types[i].obj = Py_None;
-                Py_INCREF(Py_None);
+                if (proc->types[i].type != 'p')
+                    proc->types[i].ptr = malloc(proc->types[i].len + 3);
+                else {
+                    proc->types[i].obj = Py_None;
+                    Py_INCREF(Py_None);
+                }
             }
         }
     }
@@ -852,14 +899,12 @@ static void
 OS400Proc_dealloc(OS400Proc *self)
 {
     int i;
-    if (self->parmbuf) { 
-        PyMem_Free(self->parmbuf);
-        for (i = 0; i < self->parmCount; i++) {
-            if (self->types[i].type == 'p')
-                Py_DECREF(self->types[i].obj);
-        }
+    for (i = 0; i < self->parmCount; i++) {
+        if (self->types[i].type == 'p')
+            Py_DECREF(self->types[i].obj);
+        else
+            free(self->types[i].ptr);
     }
-    Py_XDECREF(self->name);
     Py_XDECREF(self->srvpgm);
     PyObject_Del(self);
 }
@@ -870,7 +915,7 @@ OS400Proc_call(OS400Proc *self, PyObject *args, PyObject *keyws)
     PyObject *parms = Py_None, *v;
     int i, expres, parmCount = self->parmCount;
     char *xx = NULL;
-    void *retval;
+    void * __ptr128 retval;
     char **ptr;
     volatile _INTRPT_Hndlr_Parms_T  excpData;
 
@@ -881,8 +926,7 @@ OS400Proc_call(OS400Proc *self, PyObject *args, PyObject *keyws)
     if (self->ptr == NULL) {
         if (self->srvpgm->ptr == NULL)
             f_srvpgm_activate(self->srvpgm);
-        QleGetExp(&(self->srvpgm->actmark), 0, 0, 
-                  PyString_AsString((PyObject *)self->name), 
+        QleGetExp(&(self->srvpgm->actmark), 0, 0, self->name, 
                   &(self->ptr), &expres, NULL);
         if (expres != 1) {
             PyErr_SetString(os400Error, "Procedure not found.");
@@ -902,7 +946,7 @@ OS400Proc_call(OS400Proc *self, PyObject *args, PyObject *keyws)
     }
     for (i = 0; i < parmCount; i++) {
         v = PyTuple_GetItem(args, i);
-        if (f_setparm(self->parmbuf, &(self->types[i]), v))
+        if (f_setparm(&(self->types[i]), v))
             return NULL;
     }       
     /* have tried almost everything. */
@@ -911,8 +955,7 @@ OS400Proc_call(OS400Proc *self, PyObject *args, PyObject *keyws)
     /* the solution is probably to use MI */
     /* this hack gets both a pointer and a rpg string */ 
     /* have to allocate memory for the rpg string */    
-    /*if (self->retval.type == 'c')*/
-        xx = malloc(sizeof(self->retval.len) + 100);    
+    xx = malloc(sizeof(self->retval.len) + 100);    
     /* call the program */
     switch (parmCount) {
     case 0:     
@@ -922,10 +965,7 @@ OS400Proc_call(OS400Proc *self, PyObject *args, PyObject *keyws)
         retval = ((OS_func_1 *)self->ptr)(self->types[0].ptr);
         break;
     case 2:     
-        /* the diff. in parameterlist is just a test (works alike) */
         retval = ((OS_func_2 *)self->ptr)(self->types[0].ptr, self->types[1].ptr);
-        /*retval = ((OS_func_2 *)self->ptr)(self->parmbuf + self->types[0].offset,
-                                          self->parmbuf + self->types[1].offset);*/
         break;
     case 3:     
         retval = ((OS_func_3 *)self->ptr)(self->types[0].ptr, self->types[1].ptr,
@@ -974,9 +1014,11 @@ OS400Proc_call(OS400Proc *self, PyObject *args, PyObject *keyws)
     }
     if (self->retval.type != ' ') {
         if (self->retval.type == 'p')
-            v = PyCObject_FromVoidPtr(retval, NULL);
-        else if (self->retval.type == 'c')
+            v = OS400ProcReturn_New(retval, NULL);
+        else if (self->retval.type == 'b')
             v = PyString_FromStringAndSize(retval, f_strlen(retval, self->retval.len));
+        else if (self->retval.type == 'c')
+            v = strLenToUtfPy(retval, self->retval.len);
         else {
         /*  ptr = retval;
             v = f_cvtToPy(ptr[0] + self->retval.offset, self->retval.type, 
@@ -1018,7 +1060,7 @@ OS400Proc_ass_subscript(OS400Proc *self, PyObject *v, PyObject *w)
         PyErr_SetString(os400Error, "Not so many parameters.");
         return -1;
     }
-    return f_setparm(self->parmbuf, &(self->types[pos]), w);
+    return f_setparm(&(self->types[pos]), w);
 }
 
 static PyObject *
@@ -1034,7 +1076,7 @@ OS400Proc_subscript(OS400Proc *self, PyObject *v)
         PyErr_SetString(os400Error, "Not so many parameters.");
         return NULL;
     }
-    return f_getparm(self->parmbuf, &(self->types[pos]));
+    return f_getparm(&(self->types[pos]));
 }
 
 static PyMappingMethods OS400Proc_as_mapping = {
@@ -1082,8 +1124,9 @@ PyTypeObject OS400Proc_Type = {
 static void
 OS400Codec_dealloc(OS400Codec *self)
 {
+    /* do not use close when getConvDesc is used
     iconv_close(self->cdencode);
-    iconv_close(self->cddecode);
+    iconv_close(self->cddecode); */
     PyObject_Del(self);
 }
 
@@ -1099,7 +1142,7 @@ OS400Codec_encode(OS400Codec *self, PyObject *args)
     char *in;
     if (!PyArg_ParseTuple(args, "s#:encode", &in, &size))
         return NULL;    
-    return f_convert(self->cdencode, in, size);
+    return convertString(self->cdencode, in, size);
 }
 
 static char codec_decode_doc[] =
@@ -1114,7 +1157,7 @@ OS400Codec_decode(OS400Codec *self, PyObject *args)
     char *in;
     if (!PyArg_ParseTuple(args, "s#:decode", &in, &size))
         return NULL;    
-    return f_convert(self->cddecode, in, size);
+    return convertString(self->cddecode, in, size);
 }
 
 static PyMethodDef OS400Codec_methods[] = {
@@ -1163,6 +1206,7 @@ Each parameter description shold be a tuple with the following fields:\n\
 Type(string), length(int), decimals(int, optional).\n\
   The following types are valid:\n\
     'c' String. ('c',20)\n\
+    'b' String. ('c',20) (not converted from/to utf-8)\n\
     'i' Binary(Integer). ('i', 4) Length is here number of bytes (4/8).\n\
     'f' Float. ('f', 4) Length is here number of bytes (4/8).\n\
     'd' packed decimal ('d',5,0)\n\
@@ -1187,18 +1231,16 @@ os400_OS400Program(PyObject *self, PyObject *args)
 
     if (!PyArg_ParseTuple(args, "ssO:Program", &name, &lib, &parm))
         return NULL;
-    if (!PyTuple_Check(parm)) {
+    if (parm != Py_None && !PyTuple_Check(parm)) {
         PyErr_SetString(os400Error, "Third argument must be a tuple.");
         return NULL;
     }
     pgm = PyObject_New(OS400Program, &OS400Program_Type);
     if (pgm == NULL)
         return NULL;
-    strtostr400(pgm->name, name, 10);
-    strtostr400(pgm->lib, lib, 10);
+    utfToStrLen(name, pgm->name, 10, 1);
+    utfToStrLen(lib, pgm->lib, 10, 1);
     pgm->ptr = NULL;
-    pgm->parmbuf = NULL;        
-    pgm->parmLen = 0;
     pgm->parmCount = 0;
     /* parameters */
     if (parm != Py_None) {
@@ -1216,20 +1258,12 @@ os400_OS400Program(PyObject *self, PyObject *args)
                 Py_DECREF(pgm);
                 return NULL;
             } else {
-                pgm->types[i].offset = pgm->parmLen;
-                pgm->parmLen += pgm->types[i].len;
-            }
-        }
-    }
-    /* allcoate parameter area and set pointers */
-    if (pgm->parmLen > 0) {
-        pgm->parmbuf = PyMem_Malloc(pgm->parmLen);
-        for (i = 0; i < pgm->parmCount; i++) {
-            if (pgm->types[i].type != 'p')
-                pgm->types[i].ptr = pgm->parmbuf + pgm->types[i].offset;
-            else {
-                pgm->types[i].obj = Py_None;
-                Py_INCREF(Py_None);
+                if (pgm->types[i].type != 'p') {
+                    pgm->types[i].ptr = malloc(pgm->types[i].len + 3);
+                } else {
+                    pgm->types[i].obj = Py_None;
+                    Py_INCREF(Py_None);
+                }
             }
         }
     }
@@ -1257,50 +1291,56 @@ os400_OS400Srvpgm(PyObject *self, PyObject *args)
     pgm = PyObject_New(OS400Srvpgm, &OS400Srvpgm_Type);
     if (pgm == NULL)
         return NULL;
-    strtostr400(pgm->name, name, 10);
-    strtostr400(pgm->lib, lib, 10);
+    utfToStrLen(name, pgm->name, 10, 1);
+    utfToStrLen(lib, pgm->lib, 10, 1);
     pgm->ptr = NULL;
     pgm->actmark = 0;
     return (PyObject *) pgm;
 }
 
 static char rtvdtaara_doc[] =
-"os400.rtvdtaara(name, lib, length) -> String.\n\
+"os400.rtvdtaara(name, lib, length, convert(False)) -> String.\n\
 \n\
-Returns a String with the value of the data area.";
+Returns a String with the value of the data area.\n\
+If convert is True the, the value is converted from the job ccsid to utf-8";
 
 static PyObject *
 os400_rtvdtaara(PyObject *self, PyObject *args)
 {
     Qus_EC_t error;
     char dtaara[21], *name, *lib;
-    char buffer[2100], *pbuf;
-    int len;
-    Qwc_Rdtaa_Data_Returned_t *retData;
+    char buffer[2100], * __ptr128 pbuf;
+    int len, convert = 0;
+    Qwc_Rdtaa_Data_Returned_t * __ptr128 retData;
     PyObject *v = NULL;
     volatile _INTRPT_Hndlr_Parms_T  excpData;
 #pragma exception_handler(EXCP1, excpData, 0, _C2_MH_ESCAPE, _CTLA_HANDLE)
 
-    if (!PyArg_ParseTuple(args, "ssi:Program", &name, &lib, &len))
+    if (!PyArg_ParseTuple(args, "ssi|i:Program", &name, &lib, &len, &convert))
         return NULL;
     if (strlen(name) > 10 || strlen(lib) > 10) {
         PyErr_SetString(os400Error, "Error when retreiving data area.");
         return NULL;
     }
-    pbuf = (char *) buffer;
-    strtostr400(dtaara, name, 10);
-    strtostr400((dtaara + 10), lib, 10);
+    pbuf = buffer;
+    utfToStrLen(name, dtaara, 10, 0);
+    utfToStrLen(lib, (dtaara + 10), 10, 1);
     error.Bytes_Provided = sizeof(error);
     QWCRDTAA(pbuf, 2100, dtaara, 1, len, &error);
     if (error.Bytes_Available > 0) {
         PyErr_SetString(os400Error, "Error when retreiving data area.");
         return NULL;
     }
-    retData = (Qwc_Rdtaa_Data_Returned_t *)pbuf;
-    if (!strncmp(retData->Type_Value_Returned, "*CHAR     ", 10))
-        return PyString_FromStringAndSize(pbuf + sizeof(*retData),
-                                          retData->Length_Value_Returned);
-    else if (!strncmp(retData->Type_Value_Returned, "*DEC      ", 10)) {
+    retData = (Qwc_Rdtaa_Data_Returned_t * __ptr128)pbuf;
+#pragma convert(37)
+    if (!strncmp(retData->Type_Value_Returned, "*CHAR     ", 10)) {
+        if (convert == 1)
+            return strLenToUtfPy(pbuf + sizeof(*retData), retData->Length_Value_Returned);
+        else
+            return PyString_FromStringAndSize(pbuf + sizeof(*retData),
+                    retData->Length_Value_Returned);
+    } else if (!strncmp(retData->Type_Value_Returned, "*DEC      ", 10)) {
+#pragma convert(0)
         if (retData->Number_Decimal_Positions > 0 || retData->Length_Value_Returned > 4)
             return PyInt_FromLong(QXXPTOI(pbuf + sizeof(*retData),
                                           retData->Length_Value_Returned,
@@ -1318,8 +1358,8 @@ os400_rtvdtaara(PyObject *self, PyObject *args)
 static char codec_doc[] =
 "os400.Codec(ccsid) -> Codec object.\n\
 \n\
-Returns a Codec object.\n\
-ccsid should be the ccsid to convert from/to.";
+Returns a Codec object, to convert from/to utf-8.\n\
+Ccsid should be the other ccsid. Zero is the ccsid of the job.";
 
 static PyObject *
 os400_OS400Codec(PyObject *self, PyObject *args)
@@ -1332,19 +1372,20 @@ os400_OS400Codec(PyObject *self, PyObject *args)
     co = PyObject_New(OS400Codec, &OS400Codec_Type);
     if (co == NULL) return NULL;
     if (strcmp(name, "latin1") == 0)
-        strcpy(co->ccsid, "00819");
+        co->ccsid = 819;
     else if(strcmp(name, "utf8") == 0)
-        strcpy(co->ccsid, "01208");
+        co->ccsid = 1208;
     else if(strcmp(name, "ucs2") == 0)
-        strcpy(co->ccsid, "01200");
+        co->ccsid = 13488;
     else if(strlen(name) > 5) {
         PyErr_SetString(os400Error, "Ccsid not valid.");
         Py_DECREF(co);
         return NULL;
     } else
-        strcpy(co->ccsid, name);
+        co->ccsid = atoi(name);
     strcpy(co->name, name);
-    initConversion(co->ccsid, &co->cddecode, &co->cdencode);
+    co->cddecode = getConvDesc(co->ccsid, 1208);
+    co->cdencode = getConvDesc(1208, co->ccsid);
     if (co->cddecode.return_value == -1 || co->cdencode.return_value == -1) {
         PyErr_SetString(os400Error, "Error while creating codec.");
         Py_DECREF(co);
@@ -1354,14 +1395,15 @@ os400_OS400Codec(PyObject *self, PyObject *args)
 }
 
 static char chgdtaara_doc[] =
-"os400.chgdtaara(name, lib, value) -> None.\n\
+"os400.chgdtaara(name, lib, value, convert(False)) -> None.\n\
 \n\
-Change data area.";
+Change data area.\n\
+If convert is true, the value is converted to the ccsid of the job";
 
 static PyObject *
 os400_chgdtaara(PyObject *self, PyObject *args)
 {
-    int retval;
+    int retval, convert = 0;
     char *name, *lib, *p;
     _DTAA_NAME_T  dtaara;
     char buf[200];
@@ -1369,14 +1411,19 @@ os400_chgdtaara(PyObject *self, PyObject *args)
     volatile _INTRPT_Hndlr_Parms_T  excpData;
 
 #pragma exception_handler(EXCP1, excpData, 0, _C2_MH_ESCAPE, _CTLA_HANDLE)
-    if (!PyArg_ParseTuple(args, "ssO:Program", &name, &lib, &v))
+    if (!PyArg_ParseTuple(args, "ssO|i:Program", &name, &lib, &v, &convert))
         return NULL;
     if (PyString_Check(v)) {
         p = (char *) &dtaara;
-        memset(p, ' ', sizeof(dtaara));
-        memcpy(p, name, strlen(name));
-        memcpy(p + 10, lib, strlen(lib));
-        QXXCHGDA(dtaara, 1, PyString_Size(v), PyString_AsString(v));       
+        utfToStrLen(name, p, 10, 0);
+        utfToStrLen(lib, (p + 10), 10, 0);
+        if (convert == 1) {
+            p = PyMem_Malloc(PyString_Size(v));
+            utfToStr(PyString_AS_STRING(v), p);
+            QXXCHGDA(dtaara, 1, PyString_Size(v), p);       
+            PyMem_Free(p);
+        } else
+            QXXCHGDA(dtaara, 1, PyString_Size(v), PyString_AS_STRING(v));       
     } else if (PyNumber_Check(v)) {
         strcpy(buf, "chgdtaara ");
         strcat(buf, lib);
@@ -1407,13 +1454,16 @@ Commit all changes.";
 static PyObject *
 os400_commit(PyObject *self, PyObject *args)
 {
-    char *s = NULL;
+    char *p, *s = NULL;
     if (!PyArg_ParseTuple(args, "|s:commit", &s))
         return NULL;
-    if (s)
-        _Rcommit(s);
-    else
-        _Rcommit();
+    if (s) {
+        p = PyMem_Malloc(strlen(s));
+        utfToStr(s, p);
+        _Rcommit(p);
+        PyMem_Free(p);
+    } else
+        _Rcommit("\0");
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -1436,7 +1486,7 @@ os400_rollback(PyObject *self, PyObject *args)
 #ifdef ASTEC
 
 static void
-array_dealloc(void *array)
+array_dealloc(void * __ptr128 array)
 {
     free(array); 
 }
@@ -1446,7 +1496,7 @@ static char arrayToList_doc[] =
 \n\
 Convert a rpg array to a list.\n\
 The key will be the first field(s) in the list.\n\
-At the same time adds a destructor to PyCObject.";
+At the same time adds a destructor to the OS400ProcReturn object.";
  
 static PyObject *
 os400_arrayToList(PyObject *self, PyObject *args)
@@ -1455,20 +1505,20 @@ os400_arrayToList(PyObject *self, PyObject *args)
     int i, itemno, offset, keysLen, keysCount, fieldsLen, fieldsCount;
     int keysize, datasize;
     PyObject *array, *keys = Py_None, *fields = Py_None, *list, *item, *v;
-    ArrayType *arr;
-    char *carr, *buf;
+    ArrayType * __ptr128 arr;
+    char * __ptr128 carr, *buf;
     volatile _INTRPT_Hndlr_Parms_T  excpData;
 
 #pragma exception_handler(EXCP1, excpData, 0, _C2_MH_ESCAPE, _CTLA_HANDLE)
     if (!PyArg_ParseTuple(args, "O|OO:arrayToList", &array, &keys, &fields))
         return NULL;
-    if (!PyCObject_Check(array)) {
-        PyErr_SetString(os400Error, "Array not correct type.");
+    if (!OS400ProcReturn_Check(array)) {
+        PyErr_SetString(os400Error, "Must be an OS400ProcReturn object.");
         return NULL;
     }
     /* get array from pointer */
-    arr = (ArrayType *)PyCObject_AsVoidPtr(array);
-    carr = (char *)arr;
+    arr = OS400ProcReturn_AsPtr(array);
+    carr = (char * __ptr128)arr;
     keysize = arr->wKeySize;
     datasize = arr->wElemSize - arr->wKeySize;
     /* keys */
@@ -1537,6 +1587,8 @@ os400_arrayToList(PyObject *self, PyObject *args)
             return NULL;
         }
     }
+    /* allocate buffer because of problem with pointer types */
+    buf = PyMem_Malloc(keysize + datasize + 1);
     /* read all items */ 
     list = PyList_New(0);
     for (itemno = 0; itemno < arr->wElements; itemno++) {  
@@ -1546,9 +1598,10 @@ os400_arrayToList(PyObject *self, PyObject *args)
         else
             item = NULL;
         if (keysCount > 0) {
-            buf = carr + 20 + (itemno * (keysize + datasize)) + datasize;
+            memcpy(buf, carr + 20 + (itemno * (keysize + datasize)) + datasize,
+                    keysize + datasize);
             if (keys == Py_None) {
-                v = PyString_FromStringAndSize(buf, f_strlen(buf, keysize));
+                v = strLenToUtfPy(buf, f_strlen(buf, keysize));
                 if (item) PyTuple_SetItem(item, 0, v);
                 else item = v;
             } else {
@@ -1562,9 +1615,9 @@ os400_arrayToList(PyObject *self, PyObject *args)
             }
         }
         if (fieldsCount > 0) {
-            buf = carr + 20 + (itemno * (keysize + datasize));
+            memcpy(buf, carr + 20 + (itemno * (keysize + datasize)), keysize + datasize);
             if (fields == Py_None) {
-                v = PyString_FromStringAndSize(buf, f_strlen(buf, datasize));
+                v = strLenToUtfPy(buf, f_strlen(buf, datasize));
                 if (item) PyTuple_SetItem(item, keysCount, v);
                 else item = v;
             } else {
@@ -1578,9 +1631,10 @@ os400_arrayToList(PyObject *self, PyObject *args)
         }
         PyList_Append(list, item);
         Py_DECREF(item);            
-    }   
+    }
+    PyMem_Free(buf);
     /* set the destructor */
-    ((PyCObject *)array)->destructor = array_dealloc;
+    ((OS400ProcReturn *)array)->destructor = array_dealloc;
     return list;
 EXCP1:
     PyErr_SetString(os400Error, "Error occured while converting to list.");
@@ -1590,22 +1644,22 @@ return NULL;
 static char array_doc[] =
 "os400.array(array) -> None.\n\
 \n\
-Adds a array destructor to PyCObject.";
+Adds a array destructor to OS400ProcReturn.";
  
 static PyObject *
 os400_array(PyObject *self, PyObject *args)
 {
     PyObject *array;
-    PyCObject *carr;
+    OS400ProcReturn *carr;
     volatile _INTRPT_Hndlr_Parms_T  excpData;
 #pragma exception_handler(EXCP1, excpData, 0, _C2_MH_ESCAPE, _CTLA_HANDLE)
     if (!PyArg_ParseTuple(args, "O:array", &array))
         return NULL;
-    if (!PyCObject_Check(array)) {
+    if (!OS400ProcReturn_Check(array)) {
         PyErr_SetString(os400Error, "Not correct type.");
         return NULL;
     }
-    carr = (PyCObject *)array;
+    carr = (OS400ProcReturn *)array;
     carr->destructor = array_dealloc;
     Py_INCREF(array);
     return array;

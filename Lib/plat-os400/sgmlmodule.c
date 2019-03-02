@@ -1,5 +1,5 @@
 /*
- * sgmlmodule      __ILEC400__
+ * sgmlmodule
  * 
  *--------------------------------------------------------------------
  * Copyright (c) 2001 by Per Gummedal.
@@ -44,33 +44,21 @@
 
 #define CHAR_T  char
 
-#ifdef __ILEC400__
-#define ISALNUM(c) ((c > 64 && c < 91) || (c > 96 && c < 123) || (c > 47 && c < 58)) 
-#define ISSPACE(c) (c==' ' || (c > 8 && c < 14))
-#define TOLOWER(c) ((c > 64 && c < 91) ? c -= 32 : c)
-#else
 #define ISALNUM isalnum
 #define ISSPACE isspace
 #define TOLOWER tolower
-#endif
 
 typedef struct {
 	char *id;
 	char c;
 } entityStruct;
 
-#ifdef __ILEC400__
-#pragma convert(850)
-#endif
 static entityStruct xmlEntities[] = {
 	{"lt", '<'},
 	{"gt", '>'},
 	{"amp", '&'},
 	{0,0}
 };
-#ifdef __ILEC400__
-#pragma convert(0)
-#endif
 
 typedef int (cfDoc) (void *o);
 typedef int (cfTag) (void *o, char *s);
@@ -78,7 +66,7 @@ typedef int (cfStartTag) (void *o, char *s, char *a);
 typedef int (cfProc) (void *o, char *s, char *a);
 typedef int (cfData) (void *o, char *s, int len);
 
-/* ====================================================================
+/* ==================================================================== */
 /* parser data type */
 
 /* state flags */
@@ -517,9 +505,6 @@ fastfeed(SGMLParserObject* self)
     s = q = p = (CHAR_T*) self->buffer;
     end = (CHAR_T*) (self->buffer + self->bufferlen);
 	
-#ifdef __ILEC400__
-#pragma convert(850)
-#endif
     while (p < end) {
 		
         q = p; /* start of token */
@@ -741,9 +726,6 @@ fastfeed(SGMLParserObject* self)
             }
             continue;
         }
-#ifdef __ILEC400__
-#pragma convert(0)
-#endif
 
 	eot: /* end of token */
 		
@@ -754,7 +736,7 @@ fastfeed(SGMLParserObject* self)
                     return -1;
 			} else {
 				PyObject* res;
-				res = PyObject_CallFunction(self->handle_data, "s#", s, q-s);
+				res = PyObject_CallFunction(self->handle_data, "s#", s, (int)(q-s));
 				if (!res)
 					return -1;
 				Py_DECREF(res);
@@ -773,7 +755,7 @@ fastfeed(SGMLParserObject* self)
 						*(b+(t-b)) = t1;
 					} else {
 						PyObject* res;
-						res = PyObject_CallFunction(self->handle_endtag,"s#", b, t-b);
+						res = PyObject_CallFunction(self->handle_endtag,"s#", b, (int)(t-b));
 						if (!res)
 							return -1;
 						Py_DECREF(res);
@@ -789,7 +771,8 @@ fastfeed(SGMLParserObject* self)
 						*(b+(e-b)) = t1;
 					} else {
 						PyObject* res;
-						res = PyObject_CallFunction(self->handle_special,"s#", b, e-b);
+						res = PyObject_CallFunction(self->handle_special,"s#", b, 
+                                (int)(e-b));
 						if (!res)
 							return -1;
 						Py_DECREF(res);
@@ -798,13 +781,7 @@ fastfeed(SGMLParserObject* self)
             } else if (token == PI) {
                 if (self->handle_proc) {
 					int len = t-b;
-#ifdef __ILEC400__
-#pragma convert(850)
-#endif
 					while (ISSPACE(*t))
-#ifdef __ILEC400__
-#pragma convert(0)
-#endif
 						t++;
 					if (self->c) {
 						char t1 = *(b+len);
@@ -817,7 +794,8 @@ fastfeed(SGMLParserObject* self)
 						*(t+(e-t)) = t2;
 					} else {
 						PyObject* res;
-						res = PyObject_CallFunction(self->handle_proc,"s#s#", b, len, t, e-t);
+						res = PyObject_CallFunction(self->handle_proc,"s#s#", b, len,
+                                t, (int)(e-t));
 						if (!res)
 							return -1;
 						Py_DECREF(res);
@@ -825,13 +803,7 @@ fastfeed(SGMLParserObject* self)
 				}
             } else if (self->handle_starttag) {
                 int len = t-b;
-#ifdef __ILEC400__
-#pragma convert(850)
-#endif
                 while (ISSPACE(*t))
-#ifdef __ILEC400__
-#pragma convert(0)
-#endif
                     t++;
  				if (self->c) {					
 					char t1 = *(b+len);
@@ -847,7 +819,7 @@ fastfeed(SGMLParserObject* self)
 					PyObject* attr;
 					if (self->attrasstring) {
 						if (e-t > 0)
-							attr = PyString_FromStringAndSize(t, e-t);
+							attr = PyString_FromStringAndSize(t, (int)(e-t));
 						else {
 							Py_INCREF(Py_None);
 							attr = Py_None;
@@ -880,7 +852,7 @@ fastfeed(SGMLParserObject* self)
 					*(b+(e-b)) = t1;
 				} else {
 					PyObject* res;
-					res = PyObject_CallFunction(self->handle_entityref,"s#", b, e-b);
+					res = PyObject_CallFunction(self->handle_entityref,"s#", b, (int)(e-b));
 					if (!res)
 						return -1;
 					Py_DECREF(res);
@@ -915,7 +887,7 @@ fastfeed(SGMLParserObject* self)
                         return -1;
 					*(b+(e-b)) = t1;
 				} else {
-					res = PyObject_CallFunction(self->handle_charref,"s#", b, e-b);
+					res = PyObject_CallFunction(self->handle_charref,"s#", b, (int)(e-b));
 					if (!res)
 						return -1;
 					Py_DECREF(res);
@@ -946,7 +918,7 @@ fastfeed(SGMLParserObject* self)
 					if (((cfData *)self->handle_cdata)(self->obj, b, e-b) == -1)
                         return -1;
 				} else {
-                    res = PyObject_CallFunction(self->handle_cdata,"s#", b, e-b);
+                    res = PyObject_CallFunction(self->handle_cdata,"s#", b, (int)(e-b));
 					if (!res)
 						return -1;
 					Py_DECREF(res);
@@ -957,7 +929,7 @@ fastfeed(SGMLParserObject* self)
 					if (((cfData *)self->handle_data)(self->obj, b, e-b) == -1)
                         return -1;
 				} else {
-					res = PyObject_CallFunction(self->handle_data,"s#", b, e-b);
+					res = PyObject_CallFunction(self->handle_data,"s#", b, (int)(e-b));
 					if (!res)
 						return -1;
 					Py_DECREF(res);
@@ -969,7 +941,7 @@ fastfeed(SGMLParserObject* self)
                     return -1;
 			} else {
 				PyObject* res;
-				res = PyObject_CallFunction(self->handle_comment,"s#", b, e-b);
+				res = PyObject_CallFunction(self->handle_comment,"s#", b, (int)(e-b));
 				if (!res)
 					return -1;
 				Py_DECREF(res);
@@ -985,7 +957,7 @@ fastfeed(SGMLParserObject* self)
                 return -1;
 		} else {
 			PyObject* res;
-			res = PyObject_CallFunction(self->handle_data,"s#", s, q-s);
+			res = PyObject_CallFunction(self->handle_data,"s#", s, (int)(q-s));
 			if (!res)
 				return -1;
 			Py_DECREF(res);
@@ -996,9 +968,6 @@ fastfeed(SGMLParserObject* self)
     return ((char*) q) - self->buffer;
 }
 
-#ifdef __ILEC400__
-#pragma convert(850)
-#endif
 static PyObject*
 attrparse(const CHAR_T* p, int len, int xml)
 {
@@ -1026,7 +995,7 @@ attrparse(const CHAR_T* p, int len, int xml)
         while (p < end && *p != '=' && !ISSPACE(*p))
             p++;
 
-        key = PyString_FromStringAndSize(q, p-q);
+        key = PyString_FromStringAndSize(q, (int)(p-q));
         if (key == NULL)
             goto err;
 
@@ -1053,13 +1022,13 @@ attrparse(const CHAR_T* p, int len, int xml)
                 p++;
                 while (p < end && *p != *q)
                     p++;
-                value = PyString_FromStringAndSize(q+1, p-q-1);
+                value = PyString_FromStringAndSize(q+1, (int)(p-q-1));
                 if (p < end && *p == *q)
                     p++;
             } else {
                 while (p < end && !ISSPACE(*p))
                     p++;
-                value = PyString_FromStringAndSize(q, p-q);
+                value = PyString_FromStringAndSize(q, (int)(p-q));
             }
 
             if (value == NULL)
@@ -1108,6 +1077,3 @@ attrparse(const CHAR_T* p, int len, int xml)
     Py_DECREF(attrs);
     return NULL;
 }
-#ifdef __ILEC400__
-#pragma convert(0)
-#endif

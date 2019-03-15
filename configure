@@ -3346,7 +3346,6 @@ echo "${ECHO_T}no" >&6
     esac
 fi
 
-
 if test "$cross_compiling" = yes; then
 	case "$host" in
 	*-*-linux*)
@@ -3454,13 +3453,9 @@ $as_echo "#define _BSD_SOURCE 1" >>confdefs.h
     ;;
 
 esac
-
 if test $define_xopen_source = yes
 then
-
 $as_echo "#define _XOPEN_SOURCE 600" >>confdefs.h
-
-
   # On Tru64 Unix 4.0F, defining _XOPEN_SOURCE also requires
   # definition of _XOPEN_SOURCE_EXTENDED and _POSIX_C_SOURCE, or else
   # several APIs are not declared. Since this is also needed in some
@@ -3478,13 +3473,9 @@ echo "${ECHO_T}yes" >&6
 #define _OPEN_THREADS 1
 _ACEOF
 
-    cat >>confdefs.h <<\_ACEOF
-#define _POSIX_THREADS 1
-_ACEOF
-
+  fi
 
 $as_echo "#define _POSIX_C_SOURCE 200112L" >>confdefs.h
-
 
 fi
 

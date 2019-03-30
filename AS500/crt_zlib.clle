@@ -4,15 +4,14 @@
              DCL        VAR(&INLINE) TYPE(*CHAR) LEN(4)                         
              DCL        VAR(&DBG) TYPE(*CHAR) LEN(10)                           
              DCL        VAR(&TGT) TYPE(*CHAR) LEN(10)                           
-             CHGENVVAR  ENVVAR(INCLUDE) +                                       
-                          VALUE('/source/zlib1.1.4:/source/python2.3+           
-                          /modules:/source/python2.3:/source/python+            
-                          2.3/include:/qibm/proddata/ilec:/qibm/pr+             
-                          oddata/ilec/include:/qibm/include:/qibm/inc+          
-                          lude/sys')                                            
-                                                                                
+             DCL        VAR(&BASEPATH) VALUE('~/src/py5')
+             CHGCURDIR  &BASEPATH
+             CHGENVVAR  ENVVAR(INCLUDE) +
+                          VALUE('.:./as400:./include:python: +
+                          /qibm/proddata/ilec:/qibm/proddata/ilec/include: +
+                          /qibm/include:/qibm/include/sys')
              CRTCMOD    MODULE(&LIB/ZLIBMODULE) +                               
-                          SRCSTMF('/SOURCE/PYTHON2.3/MODULES/ZLIBMODU+          
+                          SRCSTMF('MODULES/ZLIBMODU+          
                           LE.C') OPTIMIZE(&OPT) INLINE(&INLINE *AUTO) +         
                           SYSIFCOPT(*IFSIO) LOCALETYPE(*LOCALEUCS2) +           
                           DBGVIEW(&DBG) TGTRLS(&TGT)                            

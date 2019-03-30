@@ -2,7 +2,7 @@
              DCL        VAR(&LIB) TYPE(*CHAR) LEN(10)                           
              DCL        VAR(&TGTRLS) TYPE(*CHAR) LEN(10)                        
                                                                                 
-             CALL PYTHON23/CRT_SRVPY PARM(&LIB &TGTRLS)                         
+             CALL &LIB/CRT_SRVPY PARM(&LIB &TGTRLS)                         
                                                                                 
              CRTSRVPGM  SRVPGM(&LIB/ARRAY) MODULE(&LIB/ARRAYMODUL) +            
                           EXPORT(*ALL) BNDSRVPGM(&LIB/PYTHON) +                 

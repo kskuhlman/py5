@@ -4,7 +4,7 @@
              DCL        VAR(&INLINE) TYPE(*CHAR) LEN(4)                         
              DCL        VAR(&DBG) TYPE(*CHAR) LEN(10)                           
              DCL        VAR(&TGT) TYPE(*CHAR) LEN(10)                      
-             DCL        VAR(&BASEPATH) VALUE('~/src/py5')
+             DCL        VAR(&BASEPATH) VALUE('/src/py5.git/')
              CHGCURDIR  &BASEPATH
 
              CHGENVVAR  ENVVAR(INCLUDE) +                                       

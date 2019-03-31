@@ -1,5 +1,5 @@
              PGM                                                                
-             DCL        VAR(&BASEPATH) VALUE('~/src/py5')
+             DCL        VAR(&BASEPATH) VALUE('/src/py5.git/')
              CHGCURDIR  &BASEPATH
              CHGENVVAR  ENVVAR(INCLUDE) +
                           VALUE('.:./as400:./include:python: +

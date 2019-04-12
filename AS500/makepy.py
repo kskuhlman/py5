@@ -256,9 +256,9 @@ sourcePath = '/src/py5.git'
 include = ("""'%s' '%s/AS500' \
 '%s/lib/plt-os400' '%s/Include' '%s/Modules' \
 '%s/Objects'  '%s/Parser' '%s/Python' \
-'%s/zlib1.1.4'"""
+'%s/zlib1.1.4' '%s/src/py5.git/AS500'"""
  % (sourcePath, sourcePath, sourcePath, sourcePath, sourcePath,
-    sourcePath, sourcePath, sourcePath, sourcePath))
+    sourcePath, sourcePath, sourcePath, sourcePath, sourcePath))
 os.environ["INCLUDE"]=include
 
 # Create as/400 modules for each c program in Python distribution directories:
